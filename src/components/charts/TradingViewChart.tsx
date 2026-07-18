@@ -583,6 +583,17 @@ export function TradingViewChart({
         timeVisible: true,
         secondsVisible: false,
       },
+      handleScroll: {
+        mouseWheel: false,
+        pressedMouseMove: activeTool === "crosshair",
+        horzTouchDrag: activeTool === "crosshair",
+        vertTouchDrag: activeTool === "crosshair",
+      },
+      handleScale: {
+        axisPressedMouseMove: activeTool === "crosshair",
+        mouseWheel: false,
+        pinch: activeTool === "crosshair",
+      },
     });
 
     chartRef.current = chart;
@@ -924,6 +935,27 @@ export function TradingViewChart({
     };
   }, [activeItem, interval, theme, JSON.stringify(studies), drawOverlay]);
 
+  // Dynamically enable/disable chart panning and scaling options based on selected activeTool
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const isCrosshair = activeTool === "crosshair";
+    chart.applyOptions({
+      handleScroll: {
+        mouseWheel: false, // Smooth custom zoom handled by handleWheel
+        pressedMouseMove: isCrosshair,
+        horzTouchDrag: isCrosshair,
+        vertTouchDrag: isCrosshair,
+      },
+      handleScale: {
+        axisPressedMouseMove: isCrosshair,
+        mouseWheel: false, // Smooth custom zoom handled by handleWheel
+        pinch: isCrosshair,
+      },
+    });
+  }, [activeTool]);
+
   // Canvas Mouse Interactions
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (drawingsLocked) return;
@@ -1061,6 +1093,8 @@ export function TradingViewChart({
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement | HTMLDivElement>) => {
+    if (activeTool !== "crosshair") return;
+
     e.preventDefault();
     e.stopPropagation();
 
