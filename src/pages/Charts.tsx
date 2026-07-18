@@ -178,8 +178,8 @@ export function Charts() {
               {selected.name} ({selected.symbol}) · {INTERVALS.find((i) => i.id === interval)?.label} Chart
             </h3>
             <div className="panel-header-actions" style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div className="mono">
-                {formatPrice(selected.price, selected.assetClass)}
+              <div className="panel-header-price mono">
+                <span className="panel-header-price-val">{formatPrice(selected.price, selected.assetClass)}</span>
                 <span className={selected.changePct >= 0 ? "positive" : "negative"}>
                   {" "}
                   {selected.changePct >= 0 ? "+" : ""}

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   Crosshair,
   Type,
@@ -11,11 +12,63 @@ import {
   EyeOff,
   Lock,
   Unlock,
+  ChevronRight,
 } from "lucide-react";
+import {
+  TWO_POINT_TOOLS,
+  THREE_POINT_TOOLS,
+  ONE_POINT_TOOLS,
+  BRUSH_TOOLS,
+} from "../charts/drawingTypes";
+
+export { TWO_POINT_TOOLS, THREE_POINT_TOOLS, ONE_POINT_TOOLS, BRUSH_TOOLS };
 
 interface ToastMsg {
   id: number;
   text: string;
+}
+
+export type DrawingToolId =
+  | "crosshair"
+  | "trendline"
+  | "ray"
+  | "extended_line"
+  | "horizontal_line"
+  | "vertical_line"
+  | "cross_line"
+  | "info_line"
+  | "parallel_channel"
+  | "pitchfork"
+  | "fibonacci"
+  | "fib_extension"
+  | "rectangle"
+  | "ellipse"
+  | "triangle"
+  | "arrow"
+  | "brush"
+  | "highlighter"
+  | "text"
+  | "callout"
+  | "price_label"
+  | "smile"
+  | "ruler"
+  | "date_range"
+  | "price_range"
+  | "zoom";
+
+interface ToolDef {
+  id: DrawingToolId;
+  label: string;
+  shortcut?: string;
+  icon: ReactNode;
+}
+
+interface ToolGroup {
+  id: string;
+  title: string;
+  tools: ToolDef[];
+  /** Tools that keep the chart in drawing mode (not toggles) */
+  isDrawingGroup?: boolean;
 }
 
 export interface DrawingToolbarProps {
@@ -32,6 +85,443 @@ export interface DrawingToolbarProps {
   onClearDrawings?: () => void;
 }
 
+function LineIcon({ d }: { d: ReactNode }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {d}
+    </svg>
+  );
+}
+
+const TOOL_GROUPS: ToolGroup[] = [
+  {
+    id: "cursors",
+    title: "Cursors",
+    tools: [
+      {
+        id: "crosshair",
+        label: "Cross",
+        shortcut: "Alt+C",
+        icon: <Crosshair size={16} strokeWidth={1.75} />,
+      },
+    ],
+  },
+  {
+    id: "trend",
+    title: "Trend Line Tools",
+    isDrawingGroup: true,
+    tools: [
+      {
+        id: "trendline",
+        label: "Trend Line",
+        shortcut: "Alt+T",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="4" y1="20" x2="20" y2="4" />
+                <circle cx="4" cy="20" r="2" fill="currentColor" />
+                <circle cx="20" cy="4" r="2" fill="currentColor" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "ray",
+        label: "Ray",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="4" y1="18" x2="20" y2="6" />
+                <circle cx="4" cy="18" r="2" fill="currentColor" />
+                <polyline points="16,6 20,6 20,10" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "info_line",
+        label: "Info Line",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="4" y1="20" x2="20" y2="4" />
+                <circle cx="4" cy="20" r="2" fill="currentColor" />
+                <circle cx="20" cy="4" r="2" fill="currentColor" />
+                <rect x="8" y="9" width="8" height="6" rx="1" fill="currentColor" opacity="0.35" stroke="none" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "extended_line",
+        label: "Extended Line",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="2" y1="20" x2="22" y2="4" />
+                <circle cx="8" cy="15" r="1.5" fill="currentColor" />
+                <circle cx="16" cy="9" r="1.5" fill="currentColor" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "horizontal_line",
+        label: "Horizontal Line",
+        shortcut: "Alt+H",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="2" y1="12" x2="22" y2="12" />
+                <circle cx="12" cy="12" r="2" fill="currentColor" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "vertical_line",
+        label: "Vertical Line",
+        shortcut: "Alt+V",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="12" y1="2" x2="12" y2="22" />
+                <circle cx="12" cy="12" r="2" fill="currentColor" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "cross_line",
+        label: "Cross Line",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="2" y1="12" x2="22" y2="12" />
+                <line x1="12" y1="2" x2="12" y2="22" />
+                <circle cx="12" cy="12" r="2" fill="currentColor" />
+              </>
+            }
+          />
+        ),
+      },
+    ],
+  },
+  {
+    id: "gann",
+    title: "Gann and Fibonacci Tools",
+    isDrawingGroup: true,
+    tools: [
+      {
+        id: "fibonacci",
+        label: "Fib Retracement",
+        shortcut: "Alt+F",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="4" y1="5" x2="20" y2="5" />
+                <line x1="4" y1="10" x2="20" y2="10" />
+                <line x1="4" y1="14" x2="20" y2="14" />
+                <line x1="4" y1="19" x2="20" y2="19" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "fib_extension",
+        label: "Trend-Based Fib Extension",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="4" y1="18" x2="10" y2="8" />
+                <line x1="10" y1="8" x2="14" y2="14" />
+                <line x1="4" y1="6" x2="20" y2="6" />
+                <line x1="4" y1="10" x2="20" y2="10" />
+                <line x1="4" y1="16" x2="20" y2="16" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "pitchfork",
+        label: "Pitchfork",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="4" y1="18" x2="20" y2="6" />
+                <line x1="4" y1="18" x2="20" y2="12" />
+                <line x1="4" y1="18" x2="20" y2="18" />
+                <circle cx="4" cy="18" r="1.5" fill="currentColor" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "parallel_channel",
+        label: "Parallel Channel",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="4" y1="7" x2="20" y2="5" />
+                <line x1="4" y1="17" x2="20" y2="15" />
+                <line x1="6" y1="7" x2="6" y2="17" />
+                <line x1="18" y1="5" x2="18" y2="15" />
+              </>
+            }
+          />
+        ),
+      },
+    ],
+  },
+  {
+    id: "shapes",
+    title: "Geometric Shapes",
+    isDrawingGroup: true,
+    tools: [
+      {
+        id: "rectangle",
+        label: "Rectangle",
+        shortcut: "Alt+Shift+R",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <rect x="4" y="6" width="16" height="12" rx="1" />
+                <circle cx="4" cy="6" r="1.5" fill="currentColor" />
+                <circle cx="20" cy="18" r="1.5" fill="currentColor" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "ellipse",
+        label: "Ellipse",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <ellipse cx="12" cy="12" rx="9" ry="6" />
+                <circle cx="3" cy="12" r="1.5" fill="currentColor" />
+                <circle cx="21" cy="12" r="1.5" fill="currentColor" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "triangle",
+        label: "Triangle",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <path d="M12 4 L20 19 L4 19 Z" />
+                <circle cx="12" cy="4" r="1.5" fill="currentColor" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "arrow",
+        label: "Arrow",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="5" y1="19" x2="19" y2="5" />
+                <polyline points="11,5 19,5 19,13" />
+              </>
+            }
+          />
+        ),
+      },
+    ],
+  },
+  {
+    id: "annotation",
+    title: "Annotation Tools",
+    isDrawingGroup: true,
+    tools: [
+      {
+        id: "text",
+        label: "Text",
+        shortcut: "Alt+K",
+        icon: <Type size={16} strokeWidth={2} />,
+      },
+      {
+        id: "callout",
+        label: "Callout",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <path d="M5 5h14v10H9l-4 4V5z" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "price_label",
+        label: "Price Label",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <path d="M4 8h12l4 4-4 4H4V8z" />
+                <line x1="7" y1="12" x2="13" y2="12" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "smile",
+        label: "Emojis",
+        icon: <Smile size={16} strokeWidth={1.75} />,
+      },
+    ],
+  },
+  {
+    id: "brush",
+    title: "Brushes",
+    isDrawingGroup: true,
+    tools: [
+      {
+        id: "brush",
+        label: "Brush",
+        shortcut: "Alt+B",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <path d="M18.7 8l-5.1-5.2c-.4-.4-1-.4-1.4 0L3.7 11.3c-.4.4-.4 1 0 1.4l5.2 5.1c.4.4 1 .4 1.4 0l8.4-8.4c.4-.4.4-1 0-1.4z" />
+                <path
+                  d="M14 13l3.5 3.5c.8.8.8 2 0 2.8l-1.4 1.4c-.8.8-2 .8-2.8 0L10 17"
+                  fill="currentColor"
+                />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "highlighter",
+        label: "Highlighter",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <path d="M4 16l6-10 8 5-6 10z" fill="currentColor" opacity="0.35" />
+                <path d="M4 16l6-10 8 5-6 10z" />
+              </>
+            }
+          />
+        ),
+      },
+    ],
+  },
+  {
+    id: "measure",
+    title: "Measurement",
+    isDrawingGroup: true,
+    tools: [
+      {
+        id: "ruler",
+        label: "Measure",
+        shortcut: "Shift+Alt+M",
+        icon: <Ruler size={16} strokeWidth={1.75} />,
+      },
+      {
+        id: "date_range",
+        label: "Date Range",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <rect x="4" y="5" width="16" height="14" rx="1.5" />
+                <line x1="4" y1="10" x2="20" y2="10" />
+                <line x1="9" y1="3" x2="9" y2="7" />
+                <line x1="15" y1="3" x2="15" y2="7" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "price_range",
+        label: "Price Range",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="6" y1="5" x2="6" y2="19" />
+                <line x1="4" y1="5" x2="8" y2="5" />
+                <line x1="4" y1="19" x2="8" y2="19" />
+                <rect x="10" y="8" width="10" height="8" rx="1" fill="currentColor" opacity="0.25" />
+              </>
+            }
+          />
+        ),
+      },
+    ],
+  },
+  {
+    id: "zoom",
+    title: "Zoom",
+    tools: [
+      {
+        id: "zoom",
+        label: "Zoom In",
+        icon: <ZoomIn size={16} strokeWidth={1.75} />,
+      },
+    ],
+  },
+];
+
+function findTool(id: string): ToolDef | undefined {
+  for (const g of TOOL_GROUPS) {
+    const t = g.tools.find((x) => x.id === id);
+    if (t) return t;
+  }
+  return undefined;
+}
+
+function groupForTool(id: string): ToolGroup | undefined {
+  return TOOL_GROUPS.find((g) => g.tools.some((t) => t.id === id));
+}
+
 export function DrawingToolbar({
   activeTool: propActiveTool,
   onSelectTool,
@@ -45,12 +535,43 @@ export function DrawingToolbar({
   onToggleDrawingsHidden,
   onClearDrawings,
 }: DrawingToolbarProps) {
-  const [localActiveTool, setLocalActiveTool] = useState<string>("trendline");
+  const [localActiveTool, setLocalActiveTool] = useState<string>("crosshair");
   const [localMagnetActive, setLocalMagnetActive] = useState(false);
   const [localToolsLocked, setLocalToolsLocked] = useState(false);
   const [localDrawingsLocked, setLocalDrawingsLocked] = useState(false);
   const [localDrawingsHidden, setLocalDrawingsHidden] = useState(false);
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+  const [flyoutPos, setFlyoutPos] = useState<{ top: number; left: number } | null>(null);
+  /** Remember last selected tool per group (TradingView behavior) */
+  const [lastTools, setLastTools] = useState<Record<string, DrawingToolId>>({
+    cursors: "crosshair",
+    trend: "trendline",
+    gann: "fibonacci",
+    shapes: "rectangle",
+    annotation: "text",
+    brush: "brush",
+    measure: "ruler",
+    zoom: "zoom",
+  });
+
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const groupBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  const openFlyoutAt = (groupId: string) => {
+    const btn = groupBtnRefs.current[groupId];
+    if (btn) {
+      const r = btn.getBoundingClientRect();
+      const top = Math.min(r.top, window.innerHeight - 80);
+      setFlyoutPos({ top: Math.max(8, top), left: r.right + 6 });
+    }
+    setOpenGroup(groupId);
+  };
+
+  const closeFlyout = () => {
+    setOpenGroup(null);
+    setFlyoutPos(null);
+  };
 
   const activeTool = propActiveTool !== undefined ? propActiveTool : localActiveTool;
   const magnetActive = propMagnetActive !== undefined ? propMagnetActive : localMagnetActive;
@@ -58,271 +579,231 @@ export function DrawingToolbar({
   const drawingsLocked = propDrawingsLocked !== undefined ? propDrawingsLocked : localDrawingsLocked;
   const drawingsHidden = propDrawingsHidden !== undefined ? propDrawingsHidden : localDrawingsHidden;
 
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (wrapperRef.current?.contains(t)) return;
+      if ((t as HTMLElement).closest?.(".toolbar-flyout")) return;
+      closeFlyout();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeFlyout();
+    };
+    const onScroll = () => {
+      if (openGroup) closeFlyout();
+    };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [openGroup]);
+
+  // Keep last-tool memory in sync when parent changes activeTool
+  useEffect(() => {
+    const g = groupForTool(activeTool);
+    if (g) {
+      setLastTools((prev) => ({ ...prev, [g.id]: activeTool as DrawingToolId }));
+    }
+  }, [activeTool]);
+
   const triggerToast = (text: string) => {
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, text }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 2500);
+    }, 2200);
   };
 
-  const handleToolClick = (toolName: string, label: string) => {
-    if (onSelectTool) {
-      onSelectTool(toolName);
-    } else {
-      setLocalActiveTool(toolName);
+  const selectTool = (toolId: DrawingToolId, label: string, shouldCloseFlyout = true) => {
+    if (onSelectTool) onSelectTool(toolId);
+    else setLocalActiveTool(toolId);
+
+    const g = groupForTool(toolId);
+    if (g) {
+      setLastTools((prev) => ({ ...prev, [g.id]: toolId }));
     }
-    triggerToast(`${label} drawing tool selected`);
+    if (shouldCloseFlyout) closeFlyout();
+    triggerToast(`${label} selected`);
+  };
+
+  const handleGroupButtonClick = (group: ToolGroup) => {
+    const last = lastTools[group.id] || group.tools[0].id;
+    const tool = findTool(last) || group.tools[0];
+
+    // Single-tool groups: just select
+    if (group.tools.length === 1) {
+      selectTool(tool.id, tool.label);
+      return;
+    }
+
+    // If already using a tool from this group, toggle flyout
+    const isGroupActive = group.tools.some((t) => t.id === activeTool);
+    if (isGroupActive && openGroup === group.id) {
+      closeFlyout();
+      return;
+    }
+    if (isGroupActive && openGroup !== group.id) {
+      openFlyoutAt(group.id);
+      return;
+    }
+
+    // Select last tool and open flyout so user can switch
+    selectTool(tool.id, tool.label, false);
+    openFlyoutAt(group.id);
   };
 
   const handleClearDrawings = () => {
-    if (onClearDrawings) {
-      onClearDrawings();
-    }
-    triggerToast("All drawings cleared from the chart");
+    if (onClearDrawings) onClearDrawings();
+    triggerToast("All drawings removed");
+  };
+
+  const displayToolForGroup = (group: ToolGroup): ToolDef => {
+    const last = lastTools[group.id];
+    const activeInGroup = group.tools.find((t) => t.id === activeTool);
+    if (activeInGroup) return activeInGroup;
+    return findTool(last || group.tools[0].id) || group.tools[0];
   };
 
   return (
-    <div className="drawing-toolbar-wrapper">
+    <div className="drawing-toolbar-wrapper" ref={wrapperRef}>
       <div className="drawing-toolbar">
-        {/* 1. Crosshair */}
-        <button
-          type="button"
-          className={`toolbar-btn ${activeTool === "crosshair" ? "active" : ""}`}
-          onClick={() => handleToolClick("crosshair", "Crosshair")}
-          title="Crosshair (C)"
-          aria-label="Crosshair"
-        >
-          <Crosshair size={16} strokeWidth={1.75} />
-        </button>
+        {TOOL_GROUPS.map((group, idx) => {
+          const display = displayToolForGroup(group);
+          const isActive = group.tools.some((t) => t.id === activeTool);
+          const hasFlyout = group.tools.length > 1;
+          const flyoutOpen = openGroup === group.id;
 
-        {/* 2. Trend Line */}
-        <button
-          type="button"
-          className={`toolbar-btn ${activeTool === "trendline" ? "active" : ""}`}
-          onClick={() => handleToolClick("trendline", "Trend Line")}
-          title="Trend Line (T)"
-          aria-label="Trend Line"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="4" y1="20" x2="20" y2="4" />
-            <circle cx="4" cy="20" r="2.5" fill="currentColor" />
-            <circle cx="20" cy="4" r="2.5" fill="currentColor" />
-          </svg>
-        </button>
+          return (
+            <div key={group.id} className="toolbar-group">
+              {idx > 0 &&
+                (TOOL_GROUPS[idx - 1].id === "cursors" ||
+                  TOOL_GROUPS[idx - 1].id === "annotation" ||
+                  TOOL_GROUPS[idx - 1].id === "measure") && (
+                  <div className="toolbar-divider" />
+                )}
 
-        {/* 3. Pitchfork / Parallel Lines */}
-        <button
-          type="button"
-          className={`toolbar-btn ${activeTool === "pitchfork" ? "active" : ""}`}
-          onClick={() => handleToolClick("pitchfork", "Parallel Channel")}
-          title="Pitchfork / Channels"
-          aria-label="Channels"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="4" y1="7" x2="20" y2="7" />
-            <line x1="4" y1="12" x2="20" y2="12" />
-            <line x1="4" y1="17" x2="20" y2="17" />
-            <circle cx="4" cy="7" r="1.5" fill="currentColor" />
-            <circle cx="20" cy="17" r="1.5" fill="currentColor" />
-          </svg>
-        </button>
+              <div className={`toolbar-group-btn-wrap ${flyoutOpen ? "flyout-open" : ""}`}>
+                <button
+                  type="button"
+                  ref={(el) => {
+                    groupBtnRefs.current[group.id] = el;
+                  }}
+                  className={`toolbar-btn ${isActive ? "active" : ""} ${hasFlyout ? "has-flyout" : ""}`}
+                  onClick={() => handleGroupButtonClick(group)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    if (!hasFlyout) return;
+                    if (flyoutOpen) closeFlyout();
+                    else openFlyoutAt(group.id);
+                  }}
+                  title={`${display.label}${display.shortcut ? ` (${display.shortcut})` : ""}${
+                    hasFlyout ? " · right-click for more" : ""
+                  }`}
+                  aria-label={display.label}
+                  aria-haspopup={hasFlyout ? "menu" : undefined}
+                  aria-expanded={hasFlyout ? flyoutOpen : undefined}
+                >
+                  {display.icon}
+                  {hasFlyout && (
+                    <span
+                      className="toolbar-flyout-chevron"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (flyoutOpen) closeFlyout();
+                        else openFlyoutAt(group.id);
+                      }}
+                      aria-hidden
+                    >
+                      <ChevronRight size={8} strokeWidth={2.5} />
+                    </span>
+                  )}
+                </button>
 
-        {/* 4. Fibonacci Retracement */}
-        <button
-          type="button"
-          className={`toolbar-btn ${activeTool === "fibonacci" ? "active" : ""}`}
-          onClick={() => handleToolClick("fibonacci", "Fibonacci Retracement")}
-          title="Fibonacci Retracement"
-          aria-label="Fibonacci Retracement"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="5" y1="5" x2="19" y2="5" />
-            <line x1="5" y1="10" x2="19" y2="10" />
-            <line x1="5" y1="14" x2="19" y2="14" />
-            <line x1="5" y1="19" x2="19" y2="19" />
-            <circle cx="5" cy="5" r="1" fill="currentColor" />
-            <circle cx="5" cy="10" r="1" fill="currentColor" />
-            <circle cx="5" cy="14" r="1" fill="currentColor" />
-            <circle cx="5" cy="19" r="1" fill="currentColor" />
-          </svg>
-        </button>
-
-        {/* 5. Shapes / Brush */}
-        <button
-          type="button"
-          className={`toolbar-btn ${activeTool === "shapes" ? "active" : ""}`}
-          onClick={() => handleToolClick("shapes", "Geometric Shapes")}
-          title="Geometric Shapes (G)"
-          aria-label="Geometric Shapes"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="4" y="6" width="16" height="12" rx="1.5" />
-            <circle cx="4" cy="6" r="1.5" fill="currentColor" />
-            <circle cx="20" cy="18" r="1.5" fill="currentColor" />
-          </svg>
-        </button>
-
-        {/* 6. Calligraphy Brush */}
-        <button
-          type="button"
-          className={`toolbar-btn ${activeTool === "brush" ? "active" : ""}`}
-          onClick={() => handleToolClick("brush", "Brush Tool")}
-          title="Brush (B)"
-          aria-label="Brush Tool"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M18.7 8l-5.1-5.2c-.4-.4-1-.4-1.4 0L3.7 11.3c-.4.4-.4 1 0 1.4l5.2 5.1c.4.4 1 .4 1.4 0l8.4-8.4c.4-.4.4-1 0-1.4z" />
-            <path d="M14 13l3.5 3.5c.8.8.8 2 0 2.8l-1.4 1.4c-.8.8-2 .8-2.8 0L10 17" fill="currentColor" />
-          </svg>
-        </button>
-
-        {/* 7. Text */}
-        <button
-          type="button"
-          className={`toolbar-btn ${activeTool === "text" ? "active" : ""}`}
-          onClick={() => handleToolClick("text", "Text Tool")}
-          title="Text (T)"
-          aria-label="Text Tool"
-        >
-          <Type size={16} strokeWidth={2} />
-        </button>
-
-        {/* 8. Smiley */}
-        <button
-          type="button"
-          className={`toolbar-btn ${activeTool === "smile" ? "active" : ""}`}
-          onClick={() => handleToolClick("smile", "Icons & Emojis")}
-          title="Icons"
-          aria-label="Icons"
-        >
-          <Smile size={16} strokeWidth={1.75} />
-        </button>
+                {hasFlyout && flyoutOpen && flyoutPos && createPortal(
+                  <div
+                    className="toolbar-flyout"
+                    role="menu"
+                    aria-label={group.title}
+                    style={{ top: flyoutPos.top, left: flyoutPos.left }}
+                  >
+                    <div className="toolbar-flyout-title">{group.title}</div>
+                    {group.tools.map((tool) => (
+                      <button
+                        key={tool.id}
+                        type="button"
+                        role="menuitem"
+                        className={`toolbar-flyout-item ${activeTool === tool.id ? "active" : ""}`}
+                        onClick={() => selectTool(tool.id, tool.label)}
+                      >
+                        <span className="toolbar-flyout-icon">{tool.icon}</span>
+                        <span className="toolbar-flyout-label">{tool.label}</span>
+                        {tool.shortcut && (
+                          <span className="toolbar-flyout-shortcut">{tool.shortcut}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>,
+                  document.body
+                )}
+              </div>
+            </div>
+          );
+        })}
 
         <div className="toolbar-divider" />
 
-        {/* 10. Ruler */}
-        <button
-          type="button"
-          className={`toolbar-btn ${activeTool === "ruler" ? "active" : ""}`}
-          onClick={() => handleToolClick("ruler", "Ruler")}
-          title="Measure (Ruler)"
-          aria-label="Measure"
-        >
-          <Ruler size={16} strokeWidth={1.75} />
-        </button>
-
-        {/* 11. Zoom */}
-        <button
-          type="button"
-          className={`toolbar-btn ${activeTool === "zoom" ? "active" : ""}`}
-          onClick={() => handleToolClick("zoom", "Zoom")}
-          title="Zoom In"
-          aria-label="Zoom"
-        >
-          <ZoomIn size={16} strokeWidth={1.75} />
-        </button>
-
-        <div className="toolbar-divider" />
-
-        {/* 13. Magnet */}
+        {/* Magnet */}
         <button
           type="button"
           className={`toolbar-btn toggle-btn ${magnetActive ? "active glow-magnet" : ""}`}
           onClick={() => {
             if (onToggleMagnet) onToggleMagnet();
             else setLocalMagnetActive(!localMagnetActive);
-            triggerToast(magnetActive ? "Magnet Mode disabled" : "Magnet Mode enabled (snap to ticks)");
+            triggerToast(magnetActive ? "Magnet off" : "Magnet on (snap to OHLC)");
           }}
-          title="Magnet Mode (Snap to OHLC)"
+          title="Magnet Mode (snap to OHLC)"
           aria-label="Magnet Mode"
         >
           <Magnet size={16} strokeWidth={1.75} />
         </button>
 
-        {/* 14. Lock drawing tools */}
+        {/* Stay in drawing mode */}
         <button
           type="button"
           className={`toolbar-btn toggle-btn ${toolsLocked ? "active glow-lock" : ""}`}
           onClick={() => {
             if (onToggleToolsLocked) onToggleToolsLocked();
             else setLocalToolsLocked(!localToolsLocked);
-            triggerToast(toolsLocked ? "Drawing tools unlocked" : "Lock drawing mode active");
+            triggerToast(toolsLocked ? "Exit drawing mode after each draw" : "Stay in drawing mode");
           }}
           title="Stay in Drawing Mode"
-          aria-label="Lock Tools"
+          aria-label="Stay in Drawing Mode"
         >
-          <svg
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="3" y="11" width="10" height="10" rx="1.5" />
-            <path d="M5 11V7a3 3 0 0 1 6 0v4" />
-            <path d="M15 4l5 5m-6.5 2.5l4-4a1 1 0 0 0 0-1.4L16.1 4a1 1 0 0 0-1.4 0l-4 4a1 1 0 0 0-.3.7v1.7h1.7a1 1 0 0 0 .7-.3z" />
-          </svg>
+          <LineIcon
+            d={
+              <>
+                <rect x="3" y="11" width="10" height="10" rx="1.5" />
+                <path d="M5 11V7a3 3 0 0 1 6 0v4" />
+                <path d="M15 4l5 5m-6.5 2.5l4-4a1 1 0 0 0 0-1.4L16.1 4a1 1 0 0 0-1.4 0l-4 4a1 1 0 0 0-.3.7v1.7h1.7a1 1 0 0 0 .7-.3z" />
+              </>
+            }
+          />
         </button>
 
-        {/* 15. Lock all drawings */}
+        {/* Lock all drawings */}
         <button
           type="button"
           className={`toolbar-btn toggle-btn ${drawingsLocked ? "active glow-lock" : ""}`}
           onClick={() => {
             if (onToggleDrawingsLocked) onToggleDrawingsLocked();
             else setLocalDrawingsLocked(!localDrawingsLocked);
-            triggerToast(drawingsLocked ? "Drawings unlocked" : "All drawings locked in place");
+            triggerToast(drawingsLocked ? "Drawings unlocked" : "All drawings locked");
           }}
-          title="Lock All Drawing Tools"
+          title="Lock All Drawings"
           aria-label="Lock Drawings"
         >
           {drawingsLocked ? (
@@ -332,7 +813,7 @@ export function DrawingToolbar({
           )}
         </button>
 
-        {/* 16. Hide drawings */}
+        {/* Hide drawings */}
         <button
           type="button"
           className={`toolbar-btn toggle-btn ${drawingsHidden ? "active" : ""}`}
@@ -353,7 +834,6 @@ export function DrawingToolbar({
 
         <div className="toolbar-divider" />
 
-        {/* 18. Delete */}
         <button
           type="button"
           className="toolbar-btn delete-btn"
@@ -365,7 +845,6 @@ export function DrawingToolbar({
         </button>
       </div>
 
-      {/* Mini notification toasts */}
       <div className="toolbar-toast-container">
         {toasts.map((t) => (
           <div key={t.id} className="toolbar-toast">
@@ -376,3 +855,4 @@ export function DrawingToolbar({
     </div>
   );
 }
+

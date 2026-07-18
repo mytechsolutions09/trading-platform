@@ -10,22 +10,24 @@ import {
   type ISeriesApi,
 } from "lightweight-charts";
 import { useTrading } from "../../context/TradingContext";
-import { DrawingToolbar } from "../trading/DrawingToolbar";
+import {
+  DrawingToolbar,
+  TWO_POINT_TOOLS,
+  THREE_POINT_TOOLS,
+  ONE_POINT_TOOLS,
+  BRUSH_TOOLS,
+} from "../trading/DrawingToolbar";
 import { fetchCandles } from "../../services/prices";
+import type { DrawingItem, DrawingPoint, DrawingType } from "./drawingTypes";
+import { normalizeDrawingType } from "./drawingTypes";
+import {
+  hitTestDrawing,
+  renderDrawing,
+  renderZoomBox,
+  type ScreenPt,
+} from "./drawingRender";
 
-export interface DrawingPoint {
-  time: number;
-  price: number;
-}
-
-export interface DrawingItem {
-  id: string;
-  type: "trendline" | "pitchfork" | "fibonacci" | "shapes" | "brush" | "text" | "smile" | "ruler";
-  p1: DrawingPoint;
-  p2?: DrawingPoint;
-  points?: DrawingPoint[];
-  text?: string;
-}
+export type { DrawingItem, DrawingPoint };
 
 interface CandleData {
   time: number;
@@ -43,6 +45,8 @@ interface Props {
   studies?: string[];
 }
 
+const EMOJIS = ["🚀", "🔥", "💎", "📈", "📉", "⚡", "🎯", "💰", "✅", "❌"];
+
 export function TradingViewChart({
   interval = "60",
   height = "100%",
@@ -57,35 +61,38 @@ export function TradingViewChart({
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const candlesRef = useRef<CandleData[]>([]);
 
-  // Drawing Toolbar State
-  const [activeTool, setActiveTool] = useState<string>("trendline");
+  const [activeTool, setActiveTool] = useState<string>("crosshair");
   const [magnetActive, setMagnetActive] = useState(false);
   const [toolsLocked, setToolsLocked] = useState(false);
   const [drawingsLocked, setDrawingsLocked] = useState(false);
   const [drawingsHidden, setDrawingsHidden] = useState(false);
 
-  // Drawings state
   const storageKey = `apex-trade-drawings-${activeItem?.symbol || "default"}`;
   const [drawings, setDrawings] = useState<DrawingItem[]>(() => {
     try {
       const saved = localStorage.getItem(storageKey);
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved) as DrawingItem[];
+      return parsed.map((d) => ({ ...d, type: normalizeDrawingType(d.type) }));
     } catch {
       return [];
     }
   });
 
-  // Load symbol-specific drawings on symbol change
   useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey);
-      setDrawings(saved ? JSON.parse(saved) : []);
+      if (!saved) {
+        setDrawings([]);
+        return;
+      }
+      const parsed = JSON.parse(saved) as DrawingItem[];
+      setDrawings(parsed.map((d) => ({ ...d, type: normalizeDrawingType(d.type) })));
     } catch {
       setDrawings([]);
     }
   }, [storageKey]);
 
-  // Persist drawings to localStorage
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(drawings));
@@ -94,14 +101,31 @@ export function TradingViewChart({
     }
   }, [drawings, storageKey]);
 
-  // Active drawing in-progress state
   const [pendingPoints, setPendingPoints] = useState<DrawingPoint[]>([]);
-  const mousePosRef = useRef<{ x: number; y: number } | null>(null);
+  const mousePosRef = useRef<ScreenPt | null>(null);
   const [isBrushing, setIsBrushing] = useState(false);
   const brushPointsRef = useRef<DrawingPoint[]>([]);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
 
-  // Keyboard shortcut: Delete or Backspace key deletes selected drawing
+  // Zoom box (screen coords)
+  const zoomStartRef = useRef<ScreenPt | null>(null);
+  const [zoomBox, setZoomBox] = useState<{ a: ScreenPt; b: ScreenPt } | null>(null);
+
+  const dragRef = useRef<{
+    drawingId: string;
+    part: "p1" | "p2" | "p3" | "body";
+    startMouse: ScreenPt;
+    initialScreenP1: ScreenPt | null;
+    initialScreenP2: ScreenPt | null;
+    initialScreenP3: ScreenPt | null;
+    initialScreenPoints: ScreenPt[] | null;
+  } | null>(null);
+
+  const finishDrawing = useCallback(() => {
+    if (!toolsLocked) setActiveTool("crosshair");
+  }, [toolsLocked]);
+
+  // Keyboard: Delete selected, Escape cancel pending, shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeElement = document.activeElement;
@@ -114,10 +138,39 @@ export function TradingViewChart({
         return;
       }
 
+      if (e.key === "Escape") {
+        setPendingPoints([]);
+        setZoomBox(null);
+        zoomStartRef.current = null;
+        setSelectedDrawingId(null);
+        setActiveTool("crosshair");
+        return;
+      }
+
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selectedDrawingId) {
           setDrawings((prev) => prev.filter((d) => d.id !== selectedDrawingId));
           setSelectedDrawingId(null);
+        }
+        return;
+      }
+
+      // TradingView-like shortcuts (Alt+key)
+      if (e.altKey && !e.ctrlKey && !e.metaKey) {
+        const map: Record<string, string> = {
+          c: "crosshair",
+          t: "trendline",
+          h: "horizontal_line",
+          v: "vertical_line",
+          f: "fibonacci",
+          b: "brush",
+          k: "text",
+        };
+        const tool = map[e.key.toLowerCase()];
+        if (tool) {
+          e.preventDefault();
+          setActiveTool(tool);
+          setPendingPoints([]);
         }
       }
     };
@@ -125,16 +178,6 @@ export function TradingViewChart({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedDrawingId]);
 
-  // Helper: Distance from point (px, py) to line segment (x1, y1)-(x2, y2)
-  const distanceToSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
-    const l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
-    if (l2 === 0) return Math.hypot(px - x1, py - y1);
-    let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
-    t = Math.max(0, Math.min(1, t));
-    return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
-  };
-
-  // Helper: Convert screen pixel (x, y) to { time, price }
   const screenToChartPoint = useCallback(
     (x: number, y: number): DrawingPoint | null => {
       const chart = chartRef.current;
@@ -144,13 +187,11 @@ export function TradingViewChart({
       const timeScale = chart.timeScale();
       const timeVal = timeScale.coordinateToTime(x);
       const priceVal = series.coordinateToPrice(y);
-
       if (timeVal === null || priceVal === null) return null;
 
       let rawTime = typeof timeVal === "number" ? timeVal : Number(timeVal);
       let rawPrice = Number(priceVal);
 
-      // Snap to OHLC if magnet is active
       if (magnetActive && candlesRef.current.length > 0) {
         const closestCandle = candlesRef.current.reduce((prev, curr) =>
           Math.abs(curr.time - rawTime) < Math.abs(prev.time - rawTime) ? curr : prev
@@ -158,10 +199,9 @@ export function TradingViewChart({
         if (closestCandle) {
           rawTime = closestCandle.time;
           const ohlc = [closestCandle.open, closestCandle.high, closestCandle.low, closestCandle.close];
-          const closestPrice = ohlc.reduce((prev, curr) =>
+          rawPrice = ohlc.reduce((prev, curr) =>
             Math.abs(curr - rawPrice) < Math.abs(prev - rawPrice) ? curr : prev
           );
-          rawPrice = closestPrice;
         }
       }
 
@@ -170,76 +210,39 @@ export function TradingViewChart({
     [magnetActive]
   );
 
-  // Helper: Convert { time, price } to screen pixel (x, y)
-  const chartPointToScreen = useCallback((pt: DrawingPoint): { x: number; y: number } | null => {
+  const chartPointToScreen = useCallback((pt: DrawingPoint): ScreenPt | null => {
     const chart = chartRef.current;
     const series = seriesRef.current;
     if (!chart || !series) return null;
-
     const x = chart.timeScale().timeToCoordinate(pt.time as Time);
     const y = series.priceToCoordinate(pt.price);
-
     if (x === null || y === null) return null;
     return { x: Number(x), y: Number(y) };
   }, []);
 
-  // Hit testing: Find drawing under (x, y) cursor
+  const priceToY = useCallback((price: number): number | null => {
+    const series = seriesRef.current;
+    if (!series) return null;
+    const y = series.priceToCoordinate(price);
+    return y === null ? null : Number(y);
+  }, []);
+
   const findDrawingAt = useCallback(
     (x: number, y: number): DrawingItem | null => {
       if (drawingsHidden) return null;
+      const canvas = overlayCanvasRef.current;
+      const w = canvas?.width || 800;
+      const h = canvas?.height || 520;
       for (let i = drawings.length - 1; i >= 0; i--) {
-        const item = drawings[i];
-        if (item.type === "trendline" && item.p1 && item.p2) {
-          const s1 = chartPointToScreen(item.p1);
-          const s2 = chartPointToScreen(item.p2);
-          if (s1 && s2) {
-            if (distanceToSegment(x, y, s1.x, s1.y, s2.x, s2.y) <= 12) return item;
-          }
-        } else if (item.type === "fibonacci" && item.p1 && item.p2) {
-          const s1 = chartPointToScreen(item.p1);
-          const s2 = chartPointToScreen(item.p2);
-          if (s1 && s2) {
-            const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
-            const pMin = Math.min(item.p1.price, item.p2.price);
-            const pMax = Math.max(item.p1.price, item.p2.price);
-            const pRange = pMax - pMin;
-            for (const lvl of levels) {
-              const priceLvl = pMax - pRange * lvl;
-              const screenLvl = seriesRef.current?.priceToCoordinate(priceLvl);
-              if (screenLvl !== null && screenLvl !== undefined) {
-                if (Math.abs(y - Number(screenLvl)) <= 8) return item;
-              }
-            }
-          }
-        } else if ((item.type === "shapes" || item.type === "ruler") && item.p1 && item.p2) {
-          const s1 = chartPointToScreen(item.p1);
-          const s2 = chartPointToScreen(item.p2);
-          if (s1 && s2) {
-            const minX = Math.min(s1.x, s2.x);
-            const maxX = Math.max(s1.x, s2.x);
-            const minY = Math.min(s1.y, s2.y);
-            const maxY = Math.max(s1.y, s2.y);
-            if (x >= minX - 6 && x <= maxX + 6 && y >= minY - 6 && y <= maxY + 6) return item;
-          }
-        } else if (item.type === "brush" && item.points && item.points.length > 1) {
-          for (let j = 0; j < item.points.length - 1; j++) {
-            const s1 = chartPointToScreen(item.points[j]);
-            const s2 = chartPointToScreen(item.points[j + 1]);
-            if (s1 && s2) {
-              if (distanceToSegment(x, y, s1.x, s1.y, s2.x, s2.y) <= 12) return item;
-            }
-          }
-        } else if ((item.type === "text" || item.type === "smile") && item.p1) {
-          const s = chartPointToScreen(item.p1);
-          if (s && Math.hypot(x - s.x, y - s.y) <= 22) return item;
+        if (hitTestDrawing(drawings[i], x, y, chartPointToScreen, priceToY, w, h)) {
+          return drawings[i];
         }
       }
       return null;
     },
-    [drawings, drawingsHidden, chartPointToScreen]
+    [drawings, drawingsHidden, chartPointToScreen, priceToY]
   );
 
-  // Redraw Canvas Overlay
   const drawOverlay = useCallback(() => {
     const canvas = overlayCanvasRef.current;
     if (!canvas) return;
@@ -247,306 +250,109 @@ export function TradingViewChart({
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    if (drawingsHidden) return;
+    if (drawingsHidden && !zoomBox) return;
 
     const isDark = theme === "dark";
-    const lineColor = "#3b82f6"; // Vibrant blue
-    const handleColor = isDark ? "#60a5fa" : "#2563eb";
-    const bgBadge = isDark ? "rgba(15, 23, 42, 0.85)" : "rgba(255, 255, 255, 0.9)";
-
-    const renderItem = (item: DrawingItem, isPreview = false) => {
-      const isSelected = item.id === selectedDrawingId;
-
-      ctx.save();
-      if (isPreview) {
-        ctx.setLineDash([5, 5]);
-        ctx.globalAlpha = 0.85;
-      }
-
-      if (item.type === "trendline" && item.p1 && item.p2) {
-        const s1 = chartPointToScreen(item.p1);
-        const s2 = chartPointToScreen(item.p2);
-        if (s1 && s2) {
-          if (isSelected) {
-            ctx.beginPath();
-            ctx.moveTo(s1.x, s1.y);
-            ctx.lineTo(s2.x, s2.y);
-            ctx.strokeStyle = "rgba(59, 130, 246, 0.4)";
-            ctx.lineWidth = 6;
-            ctx.stroke();
-          }
-
-          ctx.beginPath();
-          ctx.moveTo(s1.x, s1.y);
-          ctx.lineTo(s2.x, s2.y);
-          ctx.strokeStyle = isSelected ? "#2563eb" : lineColor;
-          ctx.lineWidth = isSelected ? 2.5 : 2;
-          ctx.stroke();
-
-          // Endpoint handles
-          [s1, s2].forEach((pt) => {
-            ctx.beginPath();
-            ctx.arc(pt.x, pt.y, isSelected ? 5 : 4, 0, Math.PI * 2);
-            ctx.fillStyle = isSelected ? "#2563eb" : handleColor;
-            ctx.fill();
-            ctx.strokeStyle = "#ffffff";
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-          });
-
-          // Price Change Badge
-          const pDiff = item.p2.price - item.p1.price;
-          const pPct = ((pDiff / item.p1.price) * 100).toFixed(2);
-          const sign = pDiff >= 0 ? "+" : "";
-          const badgeText = `${sign}${pPct}% (${sign}${pDiff.toFixed(2)})`;
-
-          const midX = (s1.x + s2.x) / 2;
-          const midY = (s1.y + s2.y) / 2 - 12;
-
-          ctx.font = "500 11px Inter, sans-serif";
-          const tw = ctx.measureText(badgeText).width;
-          ctx.fillStyle = bgBadge;
-          ctx.beginPath();
-          ctx.roundRect(midX - tw / 2 - 6, midY - 10, tw + 12, 18, 4);
-          ctx.fill();
-          ctx.strokeStyle = lineColor;
-          ctx.lineWidth = 1;
-          ctx.stroke();
-
-          ctx.fillStyle = pDiff >= 0 ? "#10b981" : "#ef4444";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(badgeText, midX, midY);
-
-          // Floating Delete Badge when selected
-          if (isSelected && !isPreview) {
-            const btnX = midX;
-            const btnY = midY - 22;
-            ctx.fillStyle = "#ef4444";
-            ctx.beginPath();
-            ctx.roundRect(btnX - 32, btnY - 9, 64, 18, 4);
-            ctx.fill();
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "600 10px Inter, sans-serif";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText("🗑 Delete", btnX, btnY);
-          }
-        }
-      } else if (item.type === "fibonacci" && item.p1 && item.p2) {
-        const s1 = chartPointToScreen(item.p1);
-        const s2 = chartPointToScreen(item.p2);
-        if (s1 && s2) {
-          const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
-          const colors = ["#ef4444", "#f97316", "#eab308", "#10b981", "#06b6d4", "#3b82f6", "#8b5cf6"];
-          const pMin = Math.min(item.p1.price, item.p2.price);
-          const pMax = Math.max(item.p1.price, item.p2.price);
-          const pRange = pMax - pMin;
-
-          levels.forEach((lvl, idx) => {
-            const priceLvl = pMax - pRange * lvl;
-            const screenLvl = seriesRef.current?.priceToCoordinate(priceLvl);
-            if (screenLvl !== null && screenLvl !== undefined) {
-              const y = Number(screenLvl);
-              ctx.beginPath();
-              ctx.moveTo(0, y);
-              ctx.lineTo(canvas.width, y);
-              ctx.strokeStyle = colors[idx % colors.length];
-              ctx.lineWidth = isSelected ? 2 : 1.5;
-              ctx.stroke();
-
-              ctx.font = "600 10px Inter, sans-serif";
-              ctx.fillStyle = colors[idx % colors.length];
-              ctx.textAlign = "left";
-              ctx.fillText(`Fib ${lvl} (${priceLvl.toFixed(2)})`, 10, y - 4);
-            }
-          });
-
-          if (isSelected && !isPreview) {
-            const midX = (s1.x + s2.x) / 2;
-            const midY = (s1.y + s2.y) / 2;
-            ctx.fillStyle = "#ef4444";
-            ctx.beginPath();
-            ctx.roundRect(midX - 32, midY - 9, 64, 18, 4);
-            ctx.fill();
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "600 10px Inter, sans-serif";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText("🗑 Delete", midX, midY);
-          }
-        }
-      } else if (item.type === "shapes" && item.p1 && item.p2) {
-        const s1 = chartPointToScreen(item.p1);
-        const s2 = chartPointToScreen(item.p2);
-        if (s1 && s2) {
-          const x = Math.min(s1.x, s2.x);
-          const y = Math.min(s1.y, s2.y);
-          const w = Math.abs(s2.x - s1.x);
-          const h = Math.abs(s2.y - s1.y);
-
-          ctx.fillStyle = isSelected ? "rgba(59, 130, 246, 0.2)" : "rgba(59, 130, 246, 0.12)";
-          ctx.fillRect(x, y, w, h);
-          ctx.strokeStyle = "#3b82f6";
-          ctx.lineWidth = isSelected ? 2.5 : 1.5;
-          ctx.strokeRect(x, y, w, h);
-
-          if (isSelected && !isPreview) {
-            const btnX = x + w / 2;
-            const btnY = y - 12;
-            ctx.fillStyle = "#ef4444";
-            ctx.beginPath();
-            ctx.roundRect(btnX - 32, btnY - 9, 64, 18, 4);
-            ctx.fill();
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "600 10px Inter, sans-serif";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText("🗑 Delete", btnX, btnY);
-          }
-        }
-      } else if (item.type === "ruler" && item.p1 && item.p2) {
-        const s1 = chartPointToScreen(item.p1);
-        const s2 = chartPointToScreen(item.p2);
-        if (s1 && s2) {
-          const x = Math.min(s1.x, s2.x);
-          const y = Math.min(s1.y, s2.y);
-          const w = Math.abs(s2.x - s1.x);
-          const h = Math.abs(s2.y - s1.y);
-
-          ctx.fillStyle = "rgba(168, 85, 247, 0.15)";
-          ctx.fillRect(x, y, w, h);
-          ctx.strokeStyle = "#a855f7";
-          ctx.lineWidth = isSelected ? 2.5 : 1.5;
-          ctx.strokeRect(x, y, w, h);
-
-          const diffPct = (((item.p2.price - item.p1.price) / item.p1.price) * 100).toFixed(2);
-          const label = `Measure: ${diffPct}% (${(item.p2.price - item.p1.price).toFixed(2)})`;
-          ctx.font = "600 11px Inter, sans-serif";
-          ctx.fillStyle = bgBadge;
-          ctx.fillRect(x + 4, y + 4, ctx.measureText(label).width + 12, 20);
-          ctx.fillStyle = "#a855f7";
-          ctx.fillText(label, x + 10, y + 18);
-
-          if (isSelected && !isPreview) {
-            const btnX = x + w / 2;
-            const btnY = y - 12;
-            ctx.fillStyle = "#ef4444";
-            ctx.beginPath();
-            ctx.roundRect(btnX - 32, btnY - 9, 64, 18, 4);
-            ctx.fill();
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "600 10px Inter, sans-serif";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText("🗑 Delete", btnX, btnY);
-          }
-        }
-      } else if (item.type === "brush" && item.points && item.points.length > 1) {
-        ctx.beginPath();
-        let started = false;
-        item.points.forEach((pt) => {
-          const s = chartPointToScreen(pt);
-          if (s) {
-            if (!started) {
-              ctx.moveTo(s.x, s.y);
-              started = true;
-            } else {
-              ctx.lineTo(s.x, s.y);
-            }
-          }
-        });
-        ctx.strokeStyle = isSelected ? "#db2777" : "#ec4899";
-        ctx.lineWidth = isSelected ? 3.5 : 2.5;
-        ctx.stroke();
-
-        if (isSelected && !isPreview && item.points.length > 0) {
-          const midPt = item.points[Math.floor(item.points.length / 2)];
-          const sMid = chartPointToScreen(midPt);
-          if (sMid) {
-            ctx.fillStyle = "#ef4444";
-            ctx.beginPath();
-            ctx.roundRect(sMid.x - 32, sMid.y - 20, 64, 18, 4);
-            ctx.fill();
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "600 10px Inter, sans-serif";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText("🗑 Delete", sMid.x, sMid.y - 11);
-          }
-        }
-      } else if (item.type === "text" && item.p1) {
-        const s = chartPointToScreen(item.p1);
-        if (s) {
-          const label = item.text || "Note";
-          ctx.font = "600 12px Inter, sans-serif";
-          const tw = ctx.measureText(label).width;
-          ctx.fillStyle = isSelected ? "#2563eb" : "#3b82f6";
-          ctx.beginPath();
-          ctx.roundRect(s.x, s.y - 12, tw + 16, 24, 6);
-          ctx.fill();
-          ctx.fillStyle = "#ffffff";
-          ctx.fillText(label, s.x + 8, s.y + 4);
-
-          if (isSelected && !isPreview) {
-            ctx.fillStyle = "#ef4444";
-            ctx.beginPath();
-            ctx.roundRect(s.x + tw / 2 - 24, s.y - 32, 64, 18, 4);
-            ctx.fill();
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "600 10px Inter, sans-serif";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText("🗑 Delete", s.x + tw / 2 + 8, s.y - 23);
-          }
-        }
-      } else if (item.type === "smile" && item.p1) {
-        const s = chartPointToScreen(item.p1);
-        if (s) {
-          ctx.font = "20px sans-serif";
-          ctx.fillText("🚀", s.x, s.y);
-
-          if (isSelected && !isPreview) {
-            ctx.fillStyle = "#ef4444";
-            ctx.beginPath();
-            ctx.roundRect(s.x - 22, s.y - 28, 64, 18, 4);
-            ctx.fill();
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "600 10px Inter, sans-serif";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText("🗑 Delete", s.x + 10, s.y - 19);
-          }
-        }
-      }
-
-      ctx.restore();
+    const rc = {
+      ctx,
+      width: canvas.width,
+      height: canvas.height,
+      chartPointToScreen,
+      priceToY,
+      selectedId: selectedDrawingId,
+      isDark,
     };
 
-    // Render completed drawings
-    drawings.forEach((item) => renderItem(item, false));
+    if (!drawingsHidden) {
+      drawings.forEach((item) => renderDrawing(item, { ...rc, isPreview: false }));
+    }
 
-    // Render drawing preview in progress
+    // Pending multi-point preview
     if (pendingPoints.length > 0 && mousePosRef.current) {
       const currentPt = screenToChartPoint(mousePosRef.current.x, mousePosRef.current.y);
       if (currentPt) {
-        const previewItem: DrawingItem = {
-          id: "preview",
-          type: activeTool as any,
-          p1: pendingPoints[0],
-          p2: currentPt,
-        };
-        renderItem(previewItem, true);
+        if (THREE_POINT_TOOLS.has(activeTool)) {
+          if (pendingPoints.length === 1) {
+            renderDrawing(
+              {
+                id: "preview",
+                type: "trendline",
+                p1: pendingPoints[0],
+                p2: currentPt,
+              },
+              { ...rc, isPreview: true }
+            );
+          } else if (pendingPoints.length === 2) {
+            renderDrawing(
+              {
+                id: "preview",
+                type: activeTool as DrawingType,
+                p1: pendingPoints[0],
+                p2: pendingPoints[1],
+                p3: currentPt,
+              },
+              { ...rc, isPreview: true }
+            );
+          }
+        } else {
+          const previewType =
+            activeTool === "parallel_channel"
+              ? "parallel_channel"
+              : (activeTool as DrawingType);
+          renderDrawing(
+            {
+              id: "preview",
+              type: previewType,
+              p1: pendingPoints[0],
+              p2: currentPt,
+            },
+            { ...rc, isPreview: true }
+          );
+        }
       }
     }
-  }, [drawings, drawingsHidden, pendingPoints, activeTool, theme, selectedDrawingId, screenToChartPoint, chartPointToScreen]);
+
+    // Live brush stroke
+    if (isBrushing && brushPointsRef.current.length > 1) {
+      renderDrawing(
+        {
+          id: "preview-brush",
+          type: activeTool === "highlighter" ? "highlighter" : "brush",
+          p1: brushPointsRef.current[0],
+          points: brushPointsRef.current,
+        },
+        { ...rc, isPreview: true }
+      );
+    }
+
+    // Zoom box
+    if (zoomBox) {
+      renderZoomBox(ctx, zoomBox.a, zoomBox.b);
+    }
+  }, [
+    drawings,
+    drawingsHidden,
+    pendingPoints,
+    activeTool,
+    theme,
+    selectedDrawingId,
+    screenToChartPoint,
+    chartPointToScreen,
+    priceToY,
+    isBrushing,
+    zoomBox,
+  ]);
+
+  const drawOverlayRef = useRef(drawOverlay);
+  useEffect(() => {
+    drawOverlayRef.current = drawOverlay;
+  }, [drawOverlay]);
 
   useEffect(() => {
     drawOverlay();
   }, [drawOverlay]);
 
-  // Chart setup useEffect
+  // Chart setup
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !activeItem) return;
@@ -571,9 +377,7 @@ export function TradingViewChart({
         vertLines: { color: gridColor },
         horzLines: { color: gridColor },
       },
-      crosshair: {
-        mode: 1,
-      },
+      crosshair: { mode: 1 },
       rightPriceScale: {
         borderColor: isDark ? "#1e293b" : "#e2e8f0",
         visible: true,
@@ -585,14 +389,14 @@ export function TradingViewChart({
       },
       handleScroll: {
         mouseWheel: false,
-        pressedMouseMove: activeTool === "crosshair",
-        horzTouchDrag: activeTool === "crosshair",
-        vertTouchDrag: activeTool === "crosshair",
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: true,
       },
       handleScale: {
-        axisPressedMouseMove: activeTool === "crosshair",
+        axisPressedMouseMove: true,
         mouseWheel: false,
-        pinch: activeTool === "crosshair",
+        pinch: true,
       },
     });
 
@@ -605,7 +409,6 @@ export function TradingViewChart({
       wickUpColor: "#10b981",
       wickDownColor: "#ef4444",
     });
-
     seriesRef.current = candleSeries;
 
     const hasVolume = studies.includes("STD;Volume");
@@ -614,20 +417,15 @@ export function TradingViewChart({
     const hasMACD = studies.includes("STD;MACD");
     const hasRSI = studies.includes("STD;RSI");
 
-    // Adjust candle scale margins dynamically based on active indicators
     let bottomMargin = 0.05;
     if (hasVolume) bottomMargin += 0.15;
     if (hasMACD) bottomMargin += 0.2;
     if (hasRSI) bottomMargin += 0.2;
 
     candleSeries.priceScale().applyOptions({
-      scaleMargins: {
-        top: 0.05,
-        bottom: Math.min(0.65, bottomMargin),
-      },
+      scaleMargins: { top: 0.05, bottom: Math.min(0.65, bottomMargin) },
     });
 
-    // Volume Series
     const volumeSeries = hasVolume
       ? chart.addSeries(HistogramSeries, {
           color: isDark ? "rgba(16, 185, 129, 0.25)" : "rgba(16, 185, 129, 0.2)",
@@ -638,76 +436,52 @@ export function TradingViewChart({
 
     if (volumeSeries) {
       chart.priceScale("volume_scale").applyOptions({
-        scaleMargins: {
-          top: hasMACD || hasRSI ? 0.55 : 0.75,
-          bottom: 0,
-        },
+        scaleMargins: { top: hasMACD || hasRSI ? 0.55 : 0.75, bottom: 0 },
       });
     }
 
-    // Moving Averages
     const smaSeries = hasSMA
-      ? chart.addSeries(LineSeries, {
-          color: "#3b82f6",
-          lineWidth: 1.5,
-          title: "SMA 20",
-        })
+      ? chart.addSeries(LineSeries, { color: "#3b82f6", lineWidth: 2, title: "SMA 20" })
       : null;
-
     const emaSeries = hasEMA
-      ? chart.addSeries(LineSeries, {
-          color: "#a855f7",
-          lineWidth: 1.5,
-          title: "EMA 50",
-        })
+      ? chart.addSeries(LineSeries, { color: "#a855f7", lineWidth: 2, title: "EMA 50" })
       : null;
 
-    // MACD Series (12, 26, 9)
-    let macdFastSeries: any = null;
-    let macdSignalSeries: any = null;
-    let macdHistSeries: any = null;
+    let macdFastSeries: ReturnType<typeof chart.addSeries> | null = null;
+    let macdSignalSeries: ReturnType<typeof chart.addSeries> | null = null;
+    let macdHistSeries: ReturnType<typeof chart.addSeries> | null = null;
 
     if (hasMACD) {
       macdFastSeries = chart.addSeries(LineSeries, {
         color: "#2563eb",
-        lineWidth: 1.5,
+        lineWidth: 2,
         title: "MACD 12,26",
         priceScaleId: "macd_scale",
       });
-
       macdSignalSeries = chart.addSeries(LineSeries, {
         color: "#f97316",
-        lineWidth: 1.5,
+        lineWidth: 2,
         title: "Signal 9",
         priceScaleId: "macd_scale",
       });
-
-      macdHistSeries = chart.addSeries(HistogramSeries, {
-        priceScaleId: "macd_scale",
-      });
-
+      macdHistSeries = chart.addSeries(HistogramSeries, { priceScaleId: "macd_scale" });
       chart.priceScale("macd_scale").applyOptions({
-        scaleMargins: {
-          top: hasRSI ? 0.5 : 0.7,
-          bottom: hasRSI ? 0.22 : 0.02,
-        },
+        scaleMargins: { top: hasRSI ? 0.5 : 0.7, bottom: hasRSI ? 0.22 : 0.02 },
         visible: true,
       });
     }
 
-    // RSI Series (14)
-    let rsiSeries: any = null;
-    let rsiUpperSeries: any = null;
-    let rsiLowerSeries: any = null;
+    let rsiSeries: ReturnType<typeof chart.addSeries> | null = null;
+    let rsiUpperSeries: ReturnType<typeof chart.addSeries> | null = null;
+    let rsiLowerSeries: ReturnType<typeof chart.addSeries> | null = null;
 
     if (hasRSI) {
       rsiSeries = chart.addSeries(LineSeries, {
         color: "#ec4899",
-        lineWidth: 1.5,
+        lineWidth: 2,
         title: "RSI 14",
         priceScaleId: "rsi_scale",
       });
-
       rsiUpperSeries = chart.addSeries(LineSeries, {
         color: isDark ? "rgba(239, 68, 68, 0.6)" : "rgba(239, 68, 68, 0.7)",
         lineWidth: 1,
@@ -715,7 +489,6 @@ export function TradingViewChart({
         title: "70 OB",
         priceScaleId: "rsi_scale",
       });
-
       rsiLowerSeries = chart.addSeries(LineSeries, {
         color: isDark ? "rgba(16, 185, 129, 0.6)" : "rgba(16, 185, 129, 0.7)",
         lineWidth: 1,
@@ -723,12 +496,8 @@ export function TradingViewChart({
         title: "30 OS",
         priceScaleId: "rsi_scale",
       });
-
       chart.priceScale("rsi_scale").applyOptions({
-        scaleMargins: {
-          top: 0.75,
-          bottom: 0.02,
-        },
+        scaleMargins: { top: 0.75, bottom: 0.02 },
         visible: true,
       });
     }
@@ -756,7 +525,6 @@ export function TradingViewChart({
           }))
         );
 
-        // Volume data
         if (volumeSeries) {
           volumeSeries.setData(
             data.map((c) => ({
@@ -774,7 +542,6 @@ export function TradingViewChart({
           );
         }
 
-        // SMA 20
         if (smaSeries && data.length >= 20) {
           const smaData = [];
           for (let i = 19; i < data.length; i++) {
@@ -785,7 +552,6 @@ export function TradingViewChart({
           smaSeries.setData(smaData);
         }
 
-        // EMA 50
         if (emaSeries && data.length >= 50) {
           const emaData = [];
           const k = 2 / (50 + 1);
@@ -800,35 +566,26 @@ export function TradingViewChart({
           emaSeries.setData(emaData);
         }
 
-        // MACD (12, 26, 9)
         if (hasMACD && macdFastSeries && macdSignalSeries && macdHistSeries && data.length >= 26) {
-          const k12 = 2 / (12 + 1);
-          const k26 = 2 / (26 + 1);
-          const k9 = 2 / (9 + 1);
-
+          const k12 = 2 / 13;
+          const k26 = 2 / 27;
+          const k9 = 2 / 10;
           let ema12 = data[0].close;
           let ema26 = data[0].close;
-
           const macdLine: { time: Time; macd: number }[] = [];
-
           for (let i = 0; i < data.length; i++) {
             ema12 = data[i].close * k12 + ema12 * (1 - k12);
             ema26 = data[i].close * k26 + ema26 * (1 - k26);
-            if (i >= 25) {
-              macdLine.push({ time: data[i].time as Time, macd: ema12 - ema26 });
-            }
+            if (i >= 25) macdLine.push({ time: data[i].time as Time, macd: ema12 - ema26 });
           }
-
           if (macdLine.length >= 9) {
             let signal = macdLine[0].macd;
             const fastData = [];
             const signalData = [];
             const histData = [];
-
             for (let i = 0; i < macdLine.length; i++) {
               signal = macdLine[i].macd * k9 + signal * (1 - k9);
               const hist = macdLine[i].macd - signal;
-
               fastData.push({ time: macdLine[i].time, value: Number(macdLine[i].macd.toFixed(4)) });
               if (i >= 8) {
                 signalData.push({ time: macdLine[i].time, value: Number(signal.toFixed(4)) });
@@ -839,61 +596,50 @@ export function TradingViewChart({
                 });
               }
             }
-
             macdFastSeries.setData(fastData);
             macdSignalSeries.setData(signalData);
             macdHistSeries.setData(histData);
           }
         }
 
-        // RSI (14)
         if (hasRSI && rsiSeries && rsiUpperSeries && rsiLowerSeries && data.length >= 15) {
           let gainSum = 0;
           let lossSum = 0;
-
           for (let i = 1; i <= 14; i++) {
             const diff = data[i].close - data[i - 1].close;
             if (diff >= 0) gainSum += diff;
             else lossSum -= diff;
           }
-
           let avgGain = gainSum / 14;
           let avgLoss = lossSum / 14;
-
           const rsiData = [];
           const upperData = [];
           const lowerData = [];
-
           for (let i = 15; i < data.length; i++) {
             const diff = data[i].close - data[i - 1].close;
             const gain = diff > 0 ? diff : 0;
             const loss = diff < 0 ? -diff : 0;
-
             avgGain = (avgGain * 13 + gain) / 14;
             avgLoss = (avgLoss * 13 + loss) / 14;
-
             const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
             const rsi = 100 - 100 / (1 + rs);
-
             const t = data[i].time as Time;
             rsiData.push({ time: t, value: Number(rsi.toFixed(2)) });
             upperData.push({ time: t, value: 70 });
             lowerData.push({ time: t, value: 30 });
           }
-
           rsiSeries.setData(rsiData);
           rsiUpperSeries.setData(upperData);
           rsiLowerSeries.setData(lowerData);
         }
 
         chart.timeScale().fitContent();
-        drawOverlay();
+        drawOverlayRef.current();
       })
       .catch(() => undefined);
 
-    // Re-render drawings on pan/zoom
     const handleRangeChange = () => {
-      requestAnimationFrame(() => drawOverlay());
+      requestAnimationFrame(() => drawOverlayRef.current());
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(handleRangeChange);
     chart.timeScale().subscribeVisibleTimeRangeChange(handleRangeChange);
@@ -904,22 +650,18 @@ export function TradingViewChart({
           width: container.clientWidth,
           height: container.clientHeight || 520,
         });
-
         if (overlayCanvasRef.current) {
           overlayCanvasRef.current.width = container.clientWidth;
           overlayCanvasRef.current.height = container.clientHeight || 520;
-          drawOverlay();
+          drawOverlayRef.current();
         }
       }
     };
 
-    const resizeObserver = new ResizeObserver(() => {
-      handleResize();
-    });
+    const resizeObserver = new ResizeObserver(() => handleResize());
     resizeObserver.observe(container);
     window.addEventListener("resize", handleResize);
 
-    // Initial canvas sizing
     if (overlayCanvasRef.current) {
       overlayCanvasRef.current.width = container.clientWidth || 800;
       overlayCanvasRef.current.height = container.clientHeight || 520;
@@ -933,50 +675,64 @@ export function TradingViewChart({
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [activeItem, interval, theme, JSON.stringify(studies), drawOverlay]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeItem?.id, interval, theme, JSON.stringify(studies)]);
 
-  // Dynamically enable/disable chart panning and scaling options based on selected activeTool
+  // Pan/scale only when crosshair (or no drawing interaction)
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-
-    const isCrosshair = activeTool === "crosshair";
+    const canPan = activeTool === "crosshair" && !zoomBox;
     chart.applyOptions({
       handleScroll: {
-        mouseWheel: false, // Smooth custom zoom handled by handleWheel
-        pressedMouseMove: isCrosshair,
-        horzTouchDrag: isCrosshair,
-        vertTouchDrag: isCrosshair,
+        mouseWheel: false,
+        pressedMouseMove: canPan,
+        horzTouchDrag: canPan,
+        vertTouchDrag: canPan,
       },
       handleScale: {
-        axisPressedMouseMove: isCrosshair,
-        mouseWheel: false, // Smooth custom zoom handled by handleWheel
-        pinch: isCrosshair,
+        axisPressedMouseMove: canPan,
+        mouseWheel: false,
+        pinch: canPan,
       },
     });
+  }, [activeTool, zoomBox]);
+
+  // Clear pending points when tool changes
+  useEffect(() => {
+    setPendingPoints([]);
+    setZoomBox(null);
+    zoomStartRef.current = null;
   }, [activeTool]);
 
-  // Canvas Mouse Interactions
+  const addDrawing = useCallback(
+    (item: DrawingItem) => {
+      setDrawings((prev) => [...prev, item]);
+      setSelectedDrawingId(item.id);
+      setPendingPoints([]);
+      finishDrawing();
+    },
+    [finishDrawing]
+  );
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (drawingsLocked) return;
+    // Zoom uses drag, not click-complete
+    if (activeTool === "zoom") return;
+
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    // Check if clicked floating delete button of currently selected drawing
-    if (selectedDrawingId) {
-      const selectedItem = drawings.find((d) => d.id === selectedDrawingId);
-      if (selectedItem) {
-        const hit = findDrawingAt(x, y);
-        if (hit && hit.id === selectedDrawingId) {
-          setDrawings((prev) => prev.filter((d) => d.id !== selectedDrawingId));
-          setSelectedDrawingId(null);
-          return;
-        }
+    // Delete badge click (approx center of selected drawing)
+    if (selectedDrawingId && activeTool === "crosshair") {
+      const hit = findDrawingAt(x, y);
+      // Secondary: if already selected and click again near it with delete intent — keep select/drag
+      if (!hit) {
+        setSelectedDrawingId(null);
       }
     }
 
-    // Check hit test for selecting existing drawing
     const hitDrawing = findDrawingAt(x, y);
     if (hitDrawing && activeTool === "crosshair") {
       setSelectedDrawingId(hitDrawing.id);
@@ -986,58 +742,206 @@ export function TradingViewChart({
     const pt = screenToChartPoint(x, y);
     if (!pt) return;
 
-    if (["trendline", "fibonacci", "pitchfork", "shapes", "ruler"].includes(activeTool)) {
+    // One-point tools
+    if (ONE_POINT_TOOLS.has(activeTool)) {
+      if (activeTool === "text" || activeTool === "callout") {
+        const text = window.prompt(
+          activeTool === "callout" ? "Callout text:" : "Text label:",
+          activeTool === "callout" ? "Watch this zone" : "Analysis"
+        );
+        if (!text) {
+          if (!toolsLocked) setActiveTool("crosshair");
+          return;
+        }
+        const item: DrawingItem = {
+          id: Date.now().toString(),
+          type: activeTool as DrawingType,
+          p1: pt,
+          p2:
+            activeTool === "callout"
+              ? { time: pt.time + 3600, price: pt.price * 1.002 }
+              : undefined,
+          text,
+        };
+        addDrawing(item);
+        return;
+      }
+      if (activeTool === "price_label") {
+        addDrawing({
+          id: Date.now().toString(),
+          type: "price_label",
+          p1: pt,
+          text: pt.price.toFixed(2),
+        });
+        return;
+      }
+      if (activeTool === "smile") {
+        const emoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+        addDrawing({
+          id: Date.now().toString(),
+          type: "smile",
+          p1: pt,
+          text: emoji,
+        });
+        return;
+      }
+      // H/V/Cross lines
+      addDrawing({
+        id: Date.now().toString(),
+        type: activeTool as DrawingType,
+        p1: pt,
+      });
+      return;
+    }
+
+    // Three-point tools
+    if (THREE_POINT_TOOLS.has(activeTool)) {
+      if (pendingPoints.length === 0) {
+        setPendingPoints([pt]);
+        setSelectedDrawingId(null);
+      } else if (pendingPoints.length === 1) {
+        setPendingPoints([pendingPoints[0], pt]);
+      } else {
+        addDrawing({
+          id: Date.now().toString(),
+          type: activeTool as DrawingType,
+          p1: pendingPoints[0],
+          p2: pendingPoints[1],
+          p3: pt,
+        });
+      }
+      return;
+    }
+
+    // Two-point tools
+    if (TWO_POINT_TOOLS.has(activeTool)) {
       if (pendingPoints.length === 0) {
         setPendingPoints([pt]);
         setSelectedDrawingId(null);
       } else {
-        const newDrawing: DrawingItem = {
-          id: Date.now().toString(),
-          type: activeTool as any,
-          p1: pendingPoints[0],
-          p2: pt,
-        };
-        setDrawings((prev) => [...prev, newDrawing]);
-        setSelectedDrawingId(newDrawing.id);
-        setPendingPoints([]);
-        if (!toolsLocked) {
-          setActiveTool("crosshair");
+        // parallel channel: auto p3 as offset from midpoint
+        const p1 = pendingPoints[0];
+        const p2 = pt;
+        let p3: DrawingPoint | undefined;
+        if (activeTool === "parallel_channel") {
+          const midPrice = (p1.price + p2.price) / 2;
+          const offset = Math.abs(p2.price - p1.price) * 0.35 || p1.price * 0.005;
+          p3 = { time: p1.time, price: midPrice + offset };
         }
-      }
-    } else if (activeTool === "text") {
-      const text = prompt("Enter text label for chart:", "Analysis Zone");
-      if (text) {
-        const newDrawing: DrawingItem = {
+        addDrawing({
           id: Date.now().toString(),
-          type: "text",
-          p1: pt,
-          text,
-        };
-        setDrawings((prev) => [...prev, newDrawing]);
-        setSelectedDrawingId(newDrawing.id);
+          type: activeTool as DrawingType,
+          p1,
+          p2,
+          p3,
+        });
       }
-      if (!toolsLocked) setActiveTool("crosshair");
-    } else if (activeTool === "smile") {
-      const newDrawing: DrawingItem = {
-        id: Date.now().toString(),
-        type: "smile",
-        p1: pt,
-      };
-      setDrawings((prev) => [...prev, newDrawing]);
-      setSelectedDrawingId(newDrawing.id);
-      if (!toolsLocked) setActiveTool("crosshair");
-    } else if (activeTool === "crosshair") {
+      return;
+    }
+
+    if (activeTool === "crosshair") {
       setSelectedDrawingId(null);
     }
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (activeTool !== "brush" || drawingsLocked) return;
+    if (drawingsLocked && activeTool !== "zoom") return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const pt = screenToChartPoint(e.clientX - rect.left, e.clientY - rect.top);
-    if (pt) {
-      setIsBrushing(true);
-      brushPointsRef.current = [pt];
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    if (activeTool === "zoom") {
+      zoomStartRef.current = { x, y };
+      setZoomBox({ a: { x, y }, b: { x, y } });
+      return;
+    }
+
+    if (BRUSH_TOOLS.has(activeTool)) {
+      const pt = screenToChartPoint(x, y);
+      if (pt) {
+        setIsBrushing(true);
+        brushPointsRef.current = [pt];
+      }
+      return;
+    }
+
+    if (activeTool === "crosshair") {
+      if (selectedDrawingId) {
+        const item = drawings.find((d) => d.id === selectedDrawingId);
+        if (item) {
+          if (item.p1) {
+            const s1 = chartPointToScreen(item.p1);
+            if (s1 && Math.hypot(x - s1.x, y - s1.y) <= 10) {
+              dragRef.current = {
+                drawingId: item.id,
+                part: "p1",
+                startMouse: { x, y },
+                initialScreenP1: { x: s1.x, y: s1.y },
+                initialScreenP2: item.p2 ? chartPointToScreen(item.p2) : null,
+                initialScreenP3: item.p3 ? chartPointToScreen(item.p3) : null,
+                initialScreenPoints: null,
+              };
+              return;
+            }
+          }
+          if (item.p2) {
+            const s2 = chartPointToScreen(item.p2);
+            if (s2 && Math.hypot(x - s2.x, y - s2.y) <= 10) {
+              dragRef.current = {
+                drawingId: item.id,
+                part: "p2",
+                startMouse: { x, y },
+                initialScreenP1: item.p1 ? chartPointToScreen(item.p1) : null,
+                initialScreenP2: { x: s2.x, y: s2.y },
+                initialScreenP3: item.p3 ? chartPointToScreen(item.p3) : null,
+                initialScreenPoints: null,
+              };
+              return;
+            }
+          }
+          if (item.p3) {
+            const s3 = chartPointToScreen(item.p3);
+            if (s3 && Math.hypot(x - s3.x, y - s3.y) <= 10) {
+              dragRef.current = {
+                drawingId: item.id,
+                part: "p3",
+                startMouse: { x, y },
+                initialScreenP1: item.p1 ? chartPointToScreen(item.p1) : null,
+                initialScreenP2: item.p2 ? chartPointToScreen(item.p2) : null,
+                initialScreenP3: { x: s3.x, y: s3.y },
+                initialScreenPoints: null,
+              };
+              return;
+            }
+          }
+        }
+      }
+
+      const hit = findDrawingAt(x, y);
+      if (hit) {
+        setSelectedDrawingId(hit.id);
+        const s1 = hit.p1 ? chartPointToScreen(hit.p1) : null;
+        const s2 = hit.p2 ? chartPointToScreen(hit.p2) : null;
+        const s3 = hit.p3 ? chartPointToScreen(hit.p3) : null;
+        const sPoints = hit.points
+          ? hit.points
+              .map((p) => chartPointToScreen(p))
+              .filter((pt): pt is ScreenPt => pt !== null)
+          : null;
+
+        dragRef.current = {
+          drawingId: hit.id,
+          part: "body",
+          startMouse: { x, y },
+          initialScreenP1: s1,
+          initialScreenP2: s2,
+          initialScreenP3: s3,
+          initialScreenPoints: sPoints,
+        };
+        return;
+      }
+
+      setSelectedDrawingId(null);
     }
   };
 
@@ -1049,7 +953,62 @@ export function TradingViewChart({
 
     const canvas = overlayCanvasRef.current;
 
-    // Dynamic cursor and pointer-events feedback when hovering over drawings
+    // Zoom box drag
+    if (zoomStartRef.current && activeTool === "zoom") {
+      setZoomBox({ a: zoomStartRef.current, b: { x, y } });
+      return;
+    }
+
+    if (dragRef.current) {
+      if (canvas) canvas.style.cursor = "grabbing";
+      const drag = dragRef.current;
+      const dx = x - drag.startMouse.x;
+      const dy = y - drag.startMouse.y;
+
+      setDrawings((prev) =>
+        prev.map((item) => {
+          if (item.id !== drag.drawingId) return item;
+          const updated = { ...item };
+
+          if (drag.part === "p1") {
+            const pt = screenToChartPoint(x, y);
+            if (pt) updated.p1 = pt;
+          } else if (drag.part === "p2") {
+            const pt = screenToChartPoint(x, y);
+            if (pt) updated.p2 = pt;
+          } else if (drag.part === "p3") {
+            const pt = screenToChartPoint(x, y);
+            if (pt) updated.p3 = pt;
+          } else if (drag.part === "body") {
+            if (drag.initialScreenP1) {
+              const newPt = screenToChartPoint(drag.initialScreenP1.x + dx, drag.initialScreenP1.y + dy);
+              if (newPt) updated.p1 = newPt;
+            }
+            if (drag.initialScreenP2) {
+              const newPt = screenToChartPoint(drag.initialScreenP2.x + dx, drag.initialScreenP2.y + dy);
+              if (newPt) updated.p2 = newPt;
+            }
+            if (drag.initialScreenP3) {
+              const newPt = screenToChartPoint(drag.initialScreenP3.x + dx, drag.initialScreenP3.y + dy);
+              if (newPt) updated.p3 = newPt;
+            }
+            if (drag.initialScreenPoints && item.points) {
+              const updatedPoints: DrawingPoint[] = [];
+              for (let i = 0; i < drag.initialScreenPoints.length; i++) {
+                const initS = drag.initialScreenPoints[i];
+                const newPt = screenToChartPoint(initS.x + dx, initS.y + dy);
+                if (newPt) updatedPoints.push(newPt);
+              }
+              if (updatedPoints.length > 0) updated.points = updatedPoints;
+            }
+          }
+          return updated;
+        })
+      );
+      requestAnimationFrame(() => drawOverlayRef.current());
+      return;
+    }
+
     if (activeTool === "crosshair") {
       const hit = findDrawingAt(x, y);
       if (canvas) {
@@ -1064,23 +1023,53 @@ export function TradingViewChart({
     }
 
     if (pendingPoints.length > 0 || isBrushing) {
-      if (isBrushing && activeTool === "brush") {
+      if (isBrushing && BRUSH_TOOLS.has(activeTool)) {
         const pt = screenToChartPoint(x, y);
-        if (pt) {
-          brushPointsRef.current.push(pt);
-        }
+        if (pt) brushPointsRef.current.push(pt);
       }
-      requestAnimationFrame(drawOverlay);
+      requestAnimationFrame(() => drawOverlayRef.current());
+    }
+  };
+
+  const applyZoomBox = (a: ScreenPt, b: ScreenPt) => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const minX = Math.min(a.x, b.x);
+    const maxX = Math.max(a.x, b.x);
+    if (maxX - minX < 12) return;
+
+    const timeScale = chart.timeScale();
+    const fromLogical = timeScale.coordinateToLogical(minX);
+    const toLogical = timeScale.coordinateToLogical(maxX);
+    if (fromLogical === null || toLogical === null) return;
+
+    const from = Math.min(Number(fromLogical), Number(toLogical));
+    const to = Math.max(Number(fromLogical), Number(toLogical));
+    if (to - from >= 2) {
+      timeScale.setVisibleLogicalRange({ from, to });
     }
   };
 
   const handleMouseUp = () => {
-    if (isBrushing && activeTool === "brush") {
+    if (dragRef.current) {
+      dragRef.current = null;
+    }
+
+    if (zoomStartRef.current && zoomBox && activeTool === "zoom") {
+      applyZoomBox(zoomBox.a, zoomBox.b);
+      zoomStartRef.current = null;
+      setZoomBox(null);
+      if (!toolsLocked) setActiveTool("crosshair");
+      requestAnimationFrame(() => drawOverlayRef.current());
+      return;
+    }
+
+    if (isBrushing && BRUSH_TOOLS.has(activeTool)) {
       setIsBrushing(false);
       if (brushPointsRef.current.length > 1) {
         const newDrawing: DrawingItem = {
           id: Date.now().toString(),
-          type: "brush",
+          type: activeTool === "highlighter" ? "highlighter" : "brush",
           p1: brushPointsRef.current[0],
           points: [...brushPointsRef.current],
         };
@@ -1093,8 +1082,7 @@ export function TradingViewChart({
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement | HTMLDivElement>) => {
-    if (activeTool !== "crosshair") return;
-
+    if (isBrushing) return;
     e.preventDefault();
     e.stopPropagation();
 
@@ -1104,7 +1092,6 @@ export function TradingViewChart({
     const range = timeScale.getVisibleLogicalRange();
     if (!range) return;
 
-    // Smooth, gradual zoom step (3.5% per wheel tick)
     const deltaSign = Math.sign(e.deltaY);
     if (deltaSign === 0) return;
     const zoomStep = 1 + deltaSign * 0.035;
@@ -1112,19 +1099,14 @@ export function TradingViewChart({
     const canvas = overlayCanvasRef.current;
     const rect = canvas?.getBoundingClientRect() || containerRef.current?.getBoundingClientRect();
     const mouseX = rect ? e.clientX - rect.left : (canvas?.width || 800) / 2;
-
     const logicalPos = timeScale.coordinateToLogical(mouseX);
     const pivot = logicalPos !== null ? Number(logicalPos) : (range.from + range.to) / 2;
 
     const newFrom = pivot - (pivot - range.from) * zoomStep;
     const newTo = pivot + (range.to - pivot) * zoomStep;
-
     if (newTo - newFrom >= 4) {
-      timeScale.setVisibleLogicalRange({
-        from: newFrom,
-        to: newTo,
-      });
-      requestAnimationFrame(drawOverlay);
+      timeScale.setVisibleLogicalRange({ from: newFrom, to: newTo });
+      requestAnimationFrame(() => drawOverlayRef.current());
     }
   };
 
@@ -1144,7 +1126,6 @@ export function TradingViewChart({
     }
   }, [storageKey]);
 
-  // Handle wrapper container mouse movements so crosshair mode can detect drawing hovers without blocking chart
   const handleWrapperMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (activeTool !== "crosshair") return;
     const canvas = overlayCanvasRef.current;
@@ -1152,7 +1133,6 @@ export function TradingViewChart({
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-
     const hit = findDrawingAt(x, y);
     if (hit || selectedDrawingId !== null) {
       canvas.style.pointerEvents = "auto";
@@ -1163,7 +1143,24 @@ export function TradingViewChart({
     }
   };
 
-  const isDrawingToolActive = activeTool !== "crosshair" || pendingPoints.length > 0 || selectedDrawingId !== null;
+  const handleSelectTool = (tool: string) => {
+    setActiveTool(tool);
+    setPendingPoints([]);
+    setSelectedDrawingId(null);
+  };
+
+  const isDrawingToolActive =
+    activeTool !== "crosshair" ||
+    pendingPoints.length > 0 ||
+    selectedDrawingId !== null ||
+    !!zoomBox;
+
+  const cursorForTool = () => {
+    if (activeTool === "crosshair") return "default";
+    if (activeTool === "zoom") return "zoom-in";
+    if (BRUSH_TOOLS.has(activeTool)) return "crosshair";
+    return "crosshair";
+  };
 
   return (
     <div
@@ -1179,7 +1176,7 @@ export function TradingViewChart({
     >
       <DrawingToolbar
         activeTool={activeTool}
-        onSelectTool={setActiveTool}
+        onSelectTool={handleSelectTool}
         magnetActive={magnetActive}
         onToggleMagnet={() => setMagnetActive((v) => !v)}
         toolsLocked={toolsLocked}
@@ -1219,15 +1216,23 @@ export function TradingViewChart({
             width: "100%",
             height: "100%",
             pointerEvents: isDrawingToolActive ? "auto" : "none",
-            cursor: activeTool === "crosshair" ? "default" : "crosshair",
+            cursor: cursorForTool(),
             zIndex: 10,
           }}
           onClick={handleCanvasClick}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
           onWheel={handleWheel}
         />
+        {pendingPoints.length > 0 && (
+          <div className="drawing-hint">
+            {THREE_POINT_TOOLS.has(activeTool)
+              ? `Click point ${pendingPoints.length + 1} of 3 · Esc to cancel`
+              : "Click second point · Esc to cancel"}
+          </div>
+        )}
       </div>
     </div>
   );
