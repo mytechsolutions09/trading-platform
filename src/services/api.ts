@@ -1,0 +1,183 @@
+import type { AssetClass, SymbolInfo } from "../data/symbols";
+import type { Order, OrderSide, OrderType, Position } from "../context/TradingContext";
+
+export interface ApiWatchlistItem {
+  id: string;
+  symbol: string;
+  tvSymbol: string;
+  name: string;
+  assetClass: AssetClass;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface ApiAccount {
+  id: number;
+  balance: number;
+  selectedSymbolId: string | null;
+  updatedAt: string;
+}
+
+export interface BootstrapResponse {
+  dbPath: string;
+  account: ApiAccount;
+  watchlist: ApiWatchlistItem[];
+  orders: Order[];
+  positions: Position[];
+}
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  let data: unknown = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+
+  if (!res.ok) {
+    const msg =
+      data &&
+      typeof data === "object" &&
+      "message" in data &&
+      typeof (data as { message: unknown }).message === "string"
+        ? (data as { message: string }).message
+        : `API error ${res.status}`;
+    throw new Error(msg);
+  }
+
+  return data as T;
+}
+
+export async function fetchHealth(): Promise<{
+  ok: boolean;
+  engine: string;
+  dbPath: string;
+}> {
+  return request("/api/health");
+}
+
+export async function fetchBootstrap(): Promise<BootstrapResponse> {
+  return request("/api/bootstrap");
+}
+
+export async function apiSetSelected(id: string): Promise<ApiAccount> {
+  return request("/api/account/selected", {
+    method: "PUT",
+    body: JSON.stringify({ id }),
+  });
+}
+
+export async function apiAddWatchlist(item: {
+  id: string;
+  symbol: string;
+  tvSymbol: string;
+  name: string;
+  assetClass: AssetClass;
+}): Promise<{
+  ok: boolean;
+  message: string;
+  watchlist: ApiWatchlistItem[];
+  account: ApiAccount;
+}> {
+  return request("/api/watchlist", {
+    method: "POST",
+    body: JSON.stringify(item),
+  });
+}
+
+export async function apiRemoveWatchlist(id: string): Promise<{
+  ok: boolean;
+  message: string;
+  watchlist: ApiWatchlistItem[];
+  account: ApiAccount;
+  selectedSymbolId?: string | null;
+}> {
+  return request(`/api/watchlist/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function apiPlaceOrder(input: {
+  side: OrderSide;
+  type: OrderType;
+  quantity: number;
+  price: number;
+  symbol: string;
+  tvSymbol: string;
+  name: string;
+}): Promise<{
+  ok: boolean;
+  message: string;
+  order?: Order;
+  balance?: number;
+  positions?: Position[];
+  orders?: Order[];
+}> {
+  return request("/api/orders", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function apiCancelOrder(id: string): Promise<{
+  ok: boolean;
+  message: string;
+  orders?: Order[];
+}> {
+  return request(`/api/orders/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+  });
+}
+
+export async function apiUpdatePositionPrices(
+  updates: { symbol: string; currentPrice: number }[],
+): Promise<Position[]> {
+  return request("/api/positions/prices", {
+    method: "POST",
+    body: JSON.stringify({ updates }),
+  });
+}
+
+export async function apiImportLocalStorage(payload: {
+  watchlist: {
+    id: string;
+    symbol: string;
+    tvSymbol: string;
+    name: string;
+    assetClass: AssetClass;
+  }[];
+  selectedSymbolId?: string | null;
+}): Promise<BootstrapResponse & { ok: boolean; message: string }> {
+  return request("/api/import", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Map DB watchlist rows to SymbolInfo (prices filled later by live feed) */
+export function toSymbolInfo(item: ApiWatchlistItem): SymbolInfo {
+  return {
+    id: item.id,
+    symbol: item.symbol,
+    tvSymbol: item.tvSymbol,
+    name: item.name,
+    assetClass: item.assetClass,
+    price: 0,
+    change24h: 0,
+    changePct: 0,
+    volume: "—",
+    high24h: 0,
+    low24h: 0,
+  };
+}
