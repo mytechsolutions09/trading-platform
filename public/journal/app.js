@@ -1126,6 +1126,7 @@ function openTradeDetail(id) {
   const pnl   = t.exitPrice ? calcPnl(t) : null;
   const em    = EMOTIONS.find(e => e.key === t.emotion);
   const modal = document.getElementById('detail-modal');
+  modal.classList.remove('chart-modal-wide');
 
   modal.querySelector('#detail-body').innerHTML = `
     <div class="grid-2" style="gap:16px;">
@@ -1647,43 +1648,52 @@ function openChartModal(id) {
   const body = modal.querySelector('#detail-body');
 
   title.textContent = chart.title;
-  const isCustom = chart.id.startsWith('custom-');
+  modal.classList.add('chart-modal-wide');
+  const isCustom = chart.id.startsWith('custom-') || chart.id.startsWith('pin-');
 
   body.innerHTML = `
-    <div style="text-align:center;margin-bottom:16px;">
-      <div style="width:100%;max-height:340px;background:#090d16;border-radius:12px;overflow:hidden;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;padding:12px;">
-        ${chart.svg ? chart.svg : `<img src="${chart.image}" style="max-width:100%;max-height:320px;object-fit:contain;" />`}
-      </div>
+    <div class="chart-detail-display-wrap">
+      ${chart.svg ? chart.svg : `<img src="${chart.image}" alt="${chart.title}" />`}
     </div>
 
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-      <span class="chart-card-badge ${chart.badgeClass || 'badge-structure'}" style="font-size:.8rem;padding:4px 12px;">${chart.category}</span>
-      <div style="display:flex;gap:12px;font-size:.85rem;font-weight:700;">
-        <span style="color:var(--green);">✓ ${chart.winRate || 'High Win Rate'}</span>
-        <span style="color:var(--cyan);">⚖ ${chart.rr || '1:3 Risk/Reward'}</span>
+    <div class="chart-detail-content-grid">
+      <div>
+        <div class="section-label" style="font-size:.8rem;font-weight:700;color:var(--purple-l);margin-bottom:8px;">📌 EXECUTION RULES & CRITERIA</div>
+        <ul style="list-style:none;display:flex;flex-direction:column;gap:10px;">
+          ${(chart.rules && chart.rules.length) ? chart.rules.map(r => `
+            <li style="display:flex;align-items:flex-start;gap:10px;font-size:.88rem;color:var(--text);line-height:1.5;background:rgba(255,255,255,0.02);padding:10px 14px;border-radius:8px;border:1px solid var(--border);">
+              <span style="color:var(--green);font-weight:bold;font-size:1rem;line-height:1;">✓</span>
+              <span>${r}</span>
+            </li>
+          `).join('') : `
+            <li style="font-size:.85rem;color:var(--text3);font-style:italic;">No custom rules specified for this chart study.</li>
+          `}
+        </ul>
+      </div>
+
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;background:var(--surface2);padding:12px 16px;border-radius:10px;border:1px solid var(--border);">
+          <span class="chart-card-badge ${chart.badgeClass || 'badge-structure'}" style="font-size:.82rem;padding:5px 14px;">${chart.category}</span>
+          <div style="display:flex;gap:14px;font-size:.88rem;font-weight:700;">
+            <span style="color:var(--green);">${chart.winRate || 'High Probability'}</span>
+            <span style="color:var(--cyan);">${chart.rr || '1 : 3.0 RR'}</span>
+          </div>
+        </div>
+
+        <div style="background:var(--surface2);padding:16px;border-radius:10px;border:1px solid var(--border);margin-bottom:16px;">
+          <div class="section-label" style="font-size:.78rem;font-weight:700;color:var(--text3);margin-bottom:6px;">SETUP OVERVIEW & PSYCHOLOGY</div>
+          <p style="font-size:.88rem;color:var(--text2);line-height:1.6;margin:0;">${chart.description || 'No detailed description provided.'}</p>
+        </div>
+
+        ${isCustom ? `
+          <div style="display:flex;justify-content:flex-end;">
+            <button class="btn btn-ghost" style="color:var(--red);border-color:rgba(239,68,68,0.3);" onclick="deleteCustomChart('${chart.id}')">
+              🗑 Delete Chart Study
+            </button>
+          </div>
+        ` : ''}
       </div>
     </div>
-
-    <p style="font-size:.9rem;color:var(--text2);line-height:1.6;margin-bottom:16px;">${chart.description}</p>
-
-    <div class="divider"></div>
-    <div class="section-label">📌 Execution Rules & Criteria</div>
-    <ul style="list-style:none;display:flex;flex-direction:column;gap:8px;margin-top:8px;">
-      ${(chart.rules || []).map(r => `
-        <li style="display:flex;align-items:flex-start;gap:8px;font-size:.85rem;color:var(--text);">
-          <span style="color:var(--green);font-weight:bold;">✓</span> <span>${r}</span>
-        </li>
-      `).join('')}
-    </ul>
-
-    ${isCustom ? `
-      <div class="divider"></div>
-      <div style="display:flex;justify-content:flex-end;">
-        <button class="btn btn-ghost" style="color:var(--red);border-color:rgba(239,68,68,0.3);" onclick="deleteCustomChart('${chart.id}')">
-          🗑 Delete Custom Study
-        </button>
-      </div>
-    ` : ''}
   `;
 
   const editBtn = modal.querySelector('#detail-edit-btn');

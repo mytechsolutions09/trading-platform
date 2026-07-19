@@ -1292,3 +1292,51 @@ dialog[open] { animation: dialogIn .2s cubic-bezier(0.34,1.56,0.64,1); }
 .spin {
   animation: spin 1s linear infinite;
 }
+
+/* ── Wide Chart Study Modal ────────────────────────────── */
+#detail-modal.chart-modal-wide {
+  max-width: 1360px;
+  width: 94vw;
+  max-height: 94vh;
+}
+
+#detail-modal.chart-modal-wide .modal-body {
+  max-height: calc(94vh - 120px);
+  padding: 24px 32px;
+}
+
+.chart-detail-display-wrap {
+  width: 100%;
+  height: 56vh;
+  min-height: 380px;
+  max-height: 640px;
+  background: #060911;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border-hi);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  margin-bottom: 20px;
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.8);
+}
+
+.chart-detail-display-wrap svg,
+.chart-detail-display-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.chart-detail-content-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 900px) {
+  .chart-detail-content-grid {
+    grid-template-columns: 1fr;
+  }
+}
