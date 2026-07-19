@@ -89,6 +89,11 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 99px; }
 
+:root {
+  --sidebar-w: 248px;
+  --sidebar-w-collapsed: 68px;
+}
+
 /* ── Layout ──────────────────────────────────────────────────────────── */
 .sidebar {
   position: fixed;
@@ -101,7 +106,8 @@ body {
   flex-direction: column;
   z-index: 100;
   overflow-y: auto;
-  transition: transform var(--transition);
+  overflow-x: hidden;
+  transition: width var(--transition), transform var(--transition);
 }
 
 .main {
@@ -110,6 +116,76 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  transition: margin-left var(--transition);
+}
+
+/* ── Collapsed Sidebar ────────────────────────────────────────────────── */
+body.sidebar-collapsed .sidebar,
+.sidebar.collapsed {
+  width: var(--sidebar-w-collapsed);
+}
+
+body.sidebar-collapsed .main {
+  margin-left: var(--sidebar-w-collapsed);
+}
+
+body.sidebar-collapsed .brand {
+  padding: 16px 8px;
+  justify-content: center;
+  gap: 0;
+}
+
+body.sidebar-collapsed .brand-text,
+body.sidebar-collapsed .nav-section,
+body.sidebar-collapsed .nav-item-text,
+body.sidebar-collapsed #theme-toggle-text,
+body.sidebar-collapsed .capital-card {
+  display: none !important;
+}
+
+body.sidebar-collapsed .sidebar-toggle-btn {
+  margin-left: 0;
+  margin-top: 4px;
+}
+
+body.sidebar-collapsed .sidebar-toggle-btn .toggle-icon {
+  transform: rotate(180deg);
+}
+
+body.sidebar-collapsed .nav-item {
+  justify-content: center;
+  padding: 10px 0;
+  margin: 4px 6px;
+}
+
+body.sidebar-collapsed .sidebar-footer {
+  padding: 12px 6px;
+}
+
+.sidebar-toggle-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-left: auto;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--card-hover);
+  color: var(--text);
+  border-color: var(--border-hi);
+}
+
+.sidebar-toggle-btn .toggle-icon {
+  transition: transform 0.25s ease;
 }
 
 /* ── Sidebar Brand ───────────────────────────────────────────────────── */
@@ -117,7 +193,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 24px 20px 20px;
+  padding: 20px 16px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -225,9 +301,18 @@ nav { padding: 14px 12px; flex: 1; }
 .capital-label { font-size: 0.7rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; }
 .capital-value { font-family: var(--ff-head); font-size: 1.1rem; font-weight: 700; color: var(--text); margin-top: 2px; }
 
+/* ── Page Base Layout & Spacing ───────────────────────────────────────── */
+.page {
+  padding: 36px 44px 56px;
+  flex: 1;
+  width: 100%;
+  max-width: 1680px;
+  box-sizing: border-box;
+}
+
 /* ── Page Header ─────────────────────────────────────────────────────── */
 .page-header {
-  padding: 32px 32px 0;
+  padding: 0 0 24px 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -245,7 +330,7 @@ nav { padding: 14px 12px; flex: 1; }
 .page-subtitle { font-size: 0.875rem; color: var(--text3); margin-top: 2px; }
 
 /* ── Content Area ────────────────────────────────────────────────────── */
-.page-content { padding: 24px 32px 48px; flex: 1; }
+.page-content { padding: 0; flex: 1; }
 
 /* ── Grid Layouts ────────────────────────────────────────────────────── */
 .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; }
@@ -763,3 +848,447 @@ dialog[open] { animation: dialogIn .2s cubic-bezier(0.34,1.56,0.64,1); }
 .trade-mini-ticker { font-weight: 700; font-size: 0.9rem; font-family: var(--ff-head); }
 .trade-mini-meta   { font-size: 0.75rem; color: var(--text3); }
 .trade-mini-pnl    { font-family: var(--ff-head); font-weight: 700; font-size: 0.95rem; }
+
+/* ─── Educational Chart Gallery ─── */
+.chart-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+}
+
+.chart-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--border-hi);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+.chart-card-header {
+  padding: 14px 16px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chart-card-title {
+  font-family: var(--ff-head);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.chart-card-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 99px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge-reversal { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.badge-continuation { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
+.badge-candlestick { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.badge-structure { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+
+.chart-card-img-wrap {
+  width: 100%;
+  height: 200px;
+  background: #090d16;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.chart-card-img-wrap svg,
+.chart-card-img-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.chart-card:hover .chart-card-img-wrap svg,
+.chart-card:hover .chart-card-img-wrap img {
+  transform: scale(1.03);
+}
+
+.chart-card-body {
+  padding: 14px 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.chart-card-desc {
+  font-size: 0.82rem;
+  color: var(--text2);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.chart-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.75rem;
+  color: var(--text3);
+}
+
+.chart-toolbar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.chart-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 0;
+}
+
+.chart-filter-pill {
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--surface2);
+  color: var(--text2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chart-filter-pill:hover {
+  background: var(--card-hover);
+  color: var(--text);
+}
+
+.chart-filter-pill.active {
+  background: var(--purple);
+  color: #ffffff;
+  border-color: var(--purple-l);
+  box-shadow: 0 0 12px var(--purple-glow);
+}
+
+.chart-upload-zone {
+  border: 2px dashed var(--border-hi);
+  border-radius: var(--radius-sm);
+  background: var(--surface2);
+  padding: 24px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chart-upload-zone:hover,
+.chart-upload-zone.dragover {
+  border-color: var(--purple);
+  background: rgba(124, 58, 237, 0.08);
+}
+
+/* ── Pinterest Pill ─────────────────────────── */
+.chart-filter-pill.pinterest-pill {
+  display: inline-flex;
+  align-items: center;
+  border-color: rgba(230, 0, 35, 0.4);
+  color: #e60023;
+}
+
+.chart-filter-pill.pinterest-pill:hover {
+  background: rgba(230, 0, 35, 0.1);
+  color: #e60023;
+}
+
+.chart-filter-pill.pinterest-pill.active {
+  background: #e60023;
+  border-color: #e60023;
+  color: #fff;
+  box-shadow: 0 0 14px rgba(230, 0, 35, 0.35);
+}
+
+/* ── Pinterest Import Button ───────────────── */
+.pinterest-import-btn {
+  color: #e60023;
+  border-color: rgba(230, 0, 35, 0.35);
+}
+
+.pinterest-import-btn:hover {
+  background: rgba(230, 0, 35, 0.1);
+  border-color: #e60023;
+  color: #e60023;
+}
+
+.pinterest-import-action-btn {
+  background: #e60023;
+  color: #fff;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: .85rem;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.pinterest-import-action-btn:hover {
+  background: #c0001e;
+  box-shadow: 0 0 16px rgba(230, 0, 35, 0.4);
+}
+
+/* ── Pinterest Badge ────────────────────────── */
+.badge-pinterest {
+  background: rgba(230, 0, 35, 0.15);
+  color: #e60023;
+  border: 1px solid rgba(230, 0, 35, 0.3);
+}
+
+/* ── Pinterest Preview Grid ─────────────────── */
+.pin-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.pin-preview-item {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+}
+
+.chart-card-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 99px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge-reversal { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.badge-continuation { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
+.badge-candlestick { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.badge-structure { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+
+.chart-card-img-wrap {
+  width: 100%;
+  height: 200px;
+  background: #090d16;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.chart-card-img-wrap svg,
+.chart-card-img-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.chart-card:hover .chart-card-img-wrap svg,
+.chart-card:hover .chart-card-img-wrap img {
+  transform: scale(1.03);
+}
+
+.chart-card-body {
+  padding: 14px 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.chart-card-desc {
+  font-size: 0.82rem;
+  color: var(--text2);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.chart-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.75rem;
+  color: var(--text3);
+}
+
+.chart-toolbar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.chart-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 0;
+}
+
+.chart-filter-pill {
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--surface2);
+  color: var(--text2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chart-filter-pill:hover {
+  background: var(--card-hover);
+  color: var(--text);
+}
+
+.chart-filter-pill.active {
+  background: var(--purple);
+  color: #ffffff;
+  border-color: var(--purple-l);
+  box-shadow: 0 0 12px var(--purple-glow);
+}
+
+.chart-upload-zone {
+  border: 2px dashed var(--border-hi);
+  border-radius: var(--radius-sm);
+  background: var(--surface2);
+  padding: 24px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chart-upload-zone:hover,
+.chart-upload-zone.dragover {
+  border-color: var(--purple);
+  background: rgba(124, 58, 237, 0.08);
+}
+
+/* ── Pinterest Pill ─────────────────────────── */
+.chart-filter-pill.pinterest-pill {
+  display: inline-flex;
+  align-items: center;
+  border-color: rgba(230, 0, 35, 0.4);
+  color: #e60023;
+}
+
+.chart-filter-pill.pinterest-pill:hover {
+  background: rgba(230, 0, 35, 0.1);
+  color: #e60023;
+}
+
+.chart-filter-pill.pinterest-pill.active {
+  background: #e60023;
+  border-color: #e60023;
+  color: #fff;
+  box-shadow: 0 0 14px rgba(230, 0, 35, 0.35);
+}
+
+/* ── Pinterest Import Button ───────────────── */
+.pinterest-import-btn {
+  color: #e60023;
+  border-color: rgba(230, 0, 35, 0.35);
+}
+
+.pinterest-import-btn:hover {
+  background: rgba(230, 0, 35, 0.1);
+  border-color: #e60023;
+  color: #e60023;
+}
+
+.pinterest-import-action-btn {
+  background: #e60023;
+  color: #fff;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: .85rem;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.pinterest-import-action-btn:hover {
+  background: #c0001e;
+  box-shadow: 0 0 16px rgba(230, 0, 35, 0.4);
+}
+
+/* ── Pinterest Badge ────────────────────────── */
+.badge-pinterest {
+  background: rgba(230, 0, 35, 0.15);
+  color: #e60023;
+  border: 1px solid rgba(230, 0, 35, 0.3);
+}
+
+/* ── Pinterest Preview Grid ─────────────────── */
+.pin-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.pin-preview-item {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  transition: border-color 0.15s;
+}
+
+.pin-preview-item:hover {
+  border-color: #e60023;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin {
+  animation: spin 1s linear infinite;
+}

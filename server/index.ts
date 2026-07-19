@@ -23,6 +23,10 @@ import {
   saveJournalNote,
   deleteJournalNote,
   batchSaveJournalNotes,
+  getJournalCharts,
+  saveJournalChart,
+  deleteJournalChart,
+  batchSaveJournalCharts,
 } from "./db.js";
 
 const PORT = Number(process.env.API_PORT) || 8787;
@@ -211,6 +215,93 @@ app.post("/api/journal/notes/batch", (req, res) => {
   const notes = req.body ?? {};
   batchSaveJournalNotes(notes);
   res.json({ ok: true });
+});
+
+// ─── Journal Custom Charts Endpoints ───
+app.get("/api/journal/custom-charts", (_req, res) => {
+  res.json(getJournalCharts());
+});
+
+app.post("/api/journal/custom-charts", (req, res) => {
+  const chart = req.body;
+  if (!chart || !chart.id) {
+    res.status(400).json({ ok: false, message: "Missing chart data." });
+    return;
+  }
+  saveJournalChart(chart);
+  res.json({ ok: true });
+});
+
+app.delete("/api/journal/custom-charts/:id", (req, res) => {
+  deleteJournalChart(req.params.id);
+  res.json({ ok: true });
+});
+
+app.post("/api/journal/custom-charts/batch", (req, res) => {
+  const list = Array.isArray(req.body) ? req.body : [];
+  batchSaveJournalCharts(list);
+  res.json({ ok: true });
+});
+
+// ─── Pinterest Link Resolver ───
+app.post("/api/pinterest-resolve", async (req, res) => {
+  const { url } = req.body ?? {};
+  if (!url || typeof url !== "string") {
+    res.status(400).json({ ok: false, message: "Missing URL." });
+    return;
+  }
+
+  const cleanUrl = url.trim();
+
+  // If already direct image link
+  if (cleanUrl.includes("i.pinimg.com") || /\.(jpeg|jpg|png|webp|gif)(\?.*)?$/i.test(cleanUrl)) {
+    res.json({ ok: true, imageUrl: cleanUrl, title: "Pinterest Chart" });
+    return;
+  }
+
+  try {
+    const response = await fetch(cleanUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      redirect: "follow",
+    });
+
+    const html = await response.text();
+
+    // Multi-strategy og:image matching
+    const ogMatch =
+      html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
+      html.match(/<meta[^>]+name=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']og:image["']/i) ||
+      html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i) ||
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i);
+
+    // Fallback: search for direct i.pinimg.com image URL in HTML
+    const pinimgMatches = html.match(/https:\/\/i\.pinimg\.com\/(?:originals|736x|474x|564x)\/[a-f0-9\/]+\.(?:jpg|png|webp|gif)/gi);
+
+    // Title matching
+    const titleMatch =
+      html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i) ||
+      html.match(/<title>([^<]+)<\/title>/i);
+
+    let imageUrl = ogMatch ? ogMatch[1] : (pinimgMatches ? pinimgMatches[0] : null);
+    let title = titleMatch ? titleMatch[1].replace(/\|.*$/, "").replace(/ - Pinterest.*$/i, "").trim() : "Pinterest Chart";
+
+    if (imageUrl) {
+      imageUrl = imageUrl.replace(/&amp;/g, "&");
+      res.json({ ok: true, imageUrl, title });
+    } else {
+      res.status(404).json({ ok: false, message: "Could not extract image from Pinterest page." });
+    }
+  } catch (err: any) {
+    res.status(500).json({ ok: false, message: err?.message || "Failed to fetch Pinterest page." });
+  }
 });
 
 const server = app.listen(PORT, () => {

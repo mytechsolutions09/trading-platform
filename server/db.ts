@@ -204,9 +204,23 @@ export function initDb() {
       content TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS journal_charts (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL,
+      badge_class TEXT,
+      win_rate TEXT,
+      rr TEXT,
+      description TEXT,
+      rules TEXT,
+      image TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_orders_timestamp ON orders(timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_watchlist_sort ON watchlist(sort_order ASC);
     CREATE INDEX IF NOT EXISTS idx_journal_trades_date ON journal_trades(date DESC);
+    CREATE INDEX IF NOT EXISTS idx_journal_charts_created ON journal_charts(created_at DESC);
   `);
 
   seedIfEmpty();
@@ -750,6 +764,96 @@ export function batchSaveJournalNotes(notes: Record<string, string>) {
       if (text) {
         insert.run(date, text);
       }
+    });
+  });
+}
+
+export interface DbJournalChart {
+  id: string;
+  title: string;
+  category: string;
+  badgeClass?: string;
+  winRate?: string;
+  rr?: string;
+  description?: string;
+  rules?: string[] | string;
+  image: string;
+  createdAt?: string;
+}
+
+export function getJournalCharts(): DbJournalChart[] {
+  const rows = db.prepare(`
+    SELECT id, title, category, badge_class AS badgeClass,
+           win_rate AS winRate, rr, description, rules, image, created_at AS createdAt
+    FROM journal_charts
+    ORDER BY created_at DESC
+  `).all() as any[];
+
+  return rows.map(r => ({
+    ...r,
+    rules: typeof r.rules === 'string' ? (tryJsonParse(r.rules) || []) : (r.rules || [])
+  }));
+}
+
+function tryJsonParse(val: string) {
+  try { return JSON.parse(val); } catch { return []; }
+}
+
+export function saveJournalChart(chart: DbJournalChart) {
+  const rulesStr = Array.isArray(chart.rules) ? JSON.stringify(chart.rules) : (chart.rules || "[]");
+  const createdAt = chart.createdAt || new Date().toISOString();
+
+  db.prepare(`
+    INSERT INTO journal_charts (id, title, category, badge_class, win_rate, rr, description, rules, image, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      title=excluded.title,
+      category=excluded.category,
+      badge_class=excluded.badge_class,
+      win_rate=excluded.win_rate,
+      rr=excluded.rr,
+      description=excluded.description,
+      rules=excluded.rules,
+      image=excluded.image
+  `).run(
+    chart.id,
+    chart.title,
+    chart.category,
+    chart.badgeClass || 'badge-structure',
+    chart.winRate || '85% Win Rate',
+    chart.rr || '1 : 3.0 RR',
+    chart.description || '',
+    rulesStr,
+    chart.image,
+    createdAt
+  );
+}
+
+export function deleteJournalChart(id: string) {
+  db.prepare("DELETE FROM journal_charts WHERE id = ?").run(id);
+}
+
+export function batchSaveJournalCharts(list: DbJournalChart[]) {
+  db.prepare("DELETE FROM journal_charts").run();
+  const insert = db.prepare(`
+    INSERT INTO journal_charts (id, title, category, badge_class, win_rate, rr, description, rules, image, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  runInTransaction(() => {
+    list.forEach(c => {
+      const rulesStr = Array.isArray(c.rules) ? JSON.stringify(c.rules) : (c.rules || "[]");
+      insert.run(
+        c.id,
+        c.title,
+        c.category,
+        c.badgeClass || 'badge-structure',
+        c.winRate || '85% Win Rate',
+        c.rr || '1 : 3.0 RR',
+        c.description || '',
+        rulesStr,
+        c.image,
+        c.createdAt || new Date().toISOString()
+      );
     });
   });
 }

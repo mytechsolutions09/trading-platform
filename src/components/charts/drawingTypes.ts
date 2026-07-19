@@ -31,6 +31,16 @@ export type DrawingType =
   /** Legacy alias stored in localStorage */
   | "shapes";
 
+export type LineStyle = "solid" | "dashed" | "dotted";
+
+export interface DrawingStyle {
+  color?: string;
+  lineWidth?: number;       // 1 | 2 | 3 | 4
+  lineStyle?: LineStyle;
+  extendLeft?: boolean;
+  extendRight?: boolean;
+}
+
 export interface DrawingItem {
   id: string;
   type: DrawingType;
@@ -39,6 +49,8 @@ export interface DrawingItem {
   p3?: DrawingPoint;
   points?: DrawingPoint[];
   text?: string;
+  /** Per-drawing visual style (trendline, ray, extended_line, info_line, h/v lines) */
+  style?: DrawingStyle;
 }
 
 export const TWO_POINT_TOOLS = new Set([

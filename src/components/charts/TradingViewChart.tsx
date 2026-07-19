@@ -18,14 +18,16 @@ import {
   BRUSH_TOOLS,
 } from "../trading/DrawingToolbar";
 import { fetchCandles } from "../../services/prices";
-import type { DrawingItem, DrawingPoint, DrawingType } from "./drawingTypes";
+import type { DrawingItem, DrawingPoint, DrawingType, DrawingStyle } from "./drawingTypes";
 import { normalizeDrawingType } from "./drawingTypes";
 import {
   hitTestDrawing,
+  hitTestHandle,
   renderDrawing,
   renderZoomBox,
   type ScreenPt,
 } from "./drawingRender";
+import { TrendLineSettings } from "./TrendLineSettings";
 
 export type { DrawingItem, DrawingPoint };
 
@@ -55,17 +57,121 @@ export function TradingViewChart({
   const { selected, theme } = useTrading();
   const activeItem = selected;
   const containerRef = useRef<HTMLDivElement>(null);
+  const chartWrapperRef = useRef<HTMLDivElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const candlesRef = useRef<CandleData[]>([]);
 
+  // Prevent page scroll when scrolling over the chart area
+  useEffect(() => {
+    const el = chartWrapperRef.current;
+    if (!el) return;
+
+    const handleNativeWheel = (e: WheelEvent) => {
+      e.preventDefault();
+    };
+
+    el.addEventListener("wheel", handleNativeWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", handleNativeWheel);
+    };
+  }, []);
+
   const [activeTool, setActiveTool] = useState<string>("crosshair");
   const [magnetActive, setMagnetActive] = useState(false);
   const [toolsLocked, setToolsLocked] = useState(false);
   const [drawingsLocked, setDrawingsLocked] = useState(false);
   const [drawingsHidden, setDrawingsHidden] = useState(false);
+
+  const [indicatorHeightRatio, setIndicatorHeightRatio] = useState<number>(() => {
+    const hasVolume = studies.includes("STD;Volume");
+    const hasMACD = studies.includes("STD;MACD");
+    const hasRSI = studies.includes("STD;RSI");
+    let ratio = 0.05;
+    if (hasVolume) ratio += 0.15;
+    if (hasMACD) ratio += 0.20;
+    if (hasRSI) ratio += 0.20;
+    return Math.min(0.65, ratio);
+  });
+
+  const indicatorHeightRatioRef = useRef(indicatorHeightRatio);
+  useEffect(() => {
+    indicatorHeightRatioRef.current = indicatorHeightRatio;
+  }, [indicatorHeightRatio]);
+
+  const [macdZoom, setMacdZoom] = useState(1.0);
+  const [rsiZoom, setRsiZoom] = useState(1.0);
+  const [mainZoom, setMainZoom] = useState(1.0);
+
+  const macdZoomRef = useRef(1.0);
+  const rsiZoomRef = useRef(1.0);
+  const mainZoomRef = useRef(1.0);
+
+  useEffect(() => { macdZoomRef.current = macdZoom; }, [macdZoom]);
+  useEffect(() => { rsiZoomRef.current = rsiZoom; }, [rsiZoom]);
+  useEffect(() => { mainZoomRef.current = mainZoom; }, [mainZoom]);
+
+  const isDraggingSeparatorRef = useRef(false);
+  const isHoveringSeparatorRef = useRef(false);
+
+  const applyScaleMargins = useCallback(
+    (chart: IChartApi, ratio: number, studiesList: string[], macdZ = 1, rsiZ = 1, mainZ = 1) => {
+      const hasVolume = studiesList.includes("STD;Volume");
+      const hasMACD = studiesList.includes("STD;MACD");
+      const hasRSI = studiesList.includes("STD;RSI");
+
+      if (seriesRef.current) {
+        const mainBottom = Math.max(0.05, Math.min(0.85, ratio + (1 - mainZ) * 0.15));
+        seriesRef.current.priceScale().applyOptions({
+          scaleMargins: { top: Math.max(0.01, 0.05 * (2 - mainZ)), bottom: mainBottom },
+        });
+      }
+
+      const topY = 1 - ratio + 0.02;
+
+      if (hasVolume && !hasMACD && !hasRSI) {
+        try {
+          chart.priceScale("volume_scale").applyOptions({
+            scaleMargins: { top: topY, bottom: 0 },
+          });
+        } catch {}
+      }
+
+      if (hasMACD && hasRSI) {
+        const macdTop = Math.max(topY, topY + (1 - macdZ) * 0.08);
+        const macdBottom = Math.max(0.02, ratio * 0.48 * macdZ);
+        try {
+          chart.priceScale("macd_scale").applyOptions({
+            scaleMargins: { top: macdTop, bottom: macdBottom },
+          });
+        } catch {}
+
+        const rsiTop = Math.max(1 - ratio * 0.45, 1 - ratio * 0.45 + (1 - rsiZ) * 0.08);
+        try {
+          chart.priceScale("rsi_scale").applyOptions({
+            scaleMargins: { top: rsiTop, bottom: 0.02 },
+          });
+        } catch {}
+      } else if (hasMACD) {
+        const macdTop = Math.max(topY, topY + (1 - macdZ) * 0.08);
+        try {
+          chart.priceScale("macd_scale").applyOptions({
+            scaleMargins: { top: macdTop, bottom: 0.02 },
+          });
+        } catch {}
+      } else if (hasRSI) {
+        const rsiTop = Math.max(topY, topY + (1 - rsiZ) * 0.08);
+        try {
+          chart.priceScale("rsi_scale").applyOptions({
+            scaleMargins: { top: rsiTop, bottom: 0.02 },
+          });
+        } catch {}
+      }
+    },
+    []
+  );
 
   const storageKey = `apex-trade-drawings-${activeItem?.symbol || "default"}`;
   const [drawings, setDrawings] = useState<DrawingItem[]>(() => {
@@ -107,6 +213,18 @@ export function TradingViewChart({
   const brushPointsRef = useRef<DrawingPoint[]>([]);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
 
+  // Floating settings panel (double-click)
+  const [settingsPanel, setSettingsPanel] = useState<{
+    drawingId: string;
+    pos: { x: number; y: number };
+  } | null>(null);
+
+  // Context menu (right-click)
+  const [contextMenu, setContextMenu] = useState<{
+    drawingId: string;
+    pos: { x: number; y: number };
+  } | null>(null);
+
   // Zoom box (screen coords)
   const zoomStartRef = useRef<ScreenPt | null>(null);
   const [zoomBox, setZoomBox] = useState<{ a: ScreenPt; b: ScreenPt } | null>(null);
@@ -124,6 +242,35 @@ export function TradingViewChart({
   const finishDrawing = useCallback(() => {
     if (!toolsLocked) setActiveTool("crosshair");
   }, [toolsLocked]);
+
+  /** Clone a drawing, offset by ~3 bars to the right */
+  const cloneDrawing = useCallback((id: string) => {
+    setDrawings((prev) => {
+      const item = prev.find((d) => d.id === id);
+      if (!item) return prev;
+      const offset = 3 * 3600; // ~3 hourly bars
+      const cloned: DrawingItem = {
+        ...item,
+        id: Date.now().toString(),
+        p1: { ...item.p1, time: item.p1.time + offset },
+        p2: item.p2 ? { ...item.p2, time: item.p2.time + offset } : undefined,
+        p3: item.p3 ? { ...item.p3, time: item.p3.time + offset } : undefined,
+        points: item.points?.map((p) => ({ ...p, time: p.time + offset })),
+      };
+      return [...prev, cloned];
+    });
+    setContextMenu(null);
+    setSettingsPanel(null);
+  }, []);
+
+  /** Update style of a specific drawing */
+  const updateDrawingStyle = useCallback((id: string, patch: Partial<DrawingStyle>) => {
+    setDrawings((prev) =>
+      prev.map((d) =>
+        d.id === id ? { ...d, style: { ...d.style, ...patch } } : d
+      )
+    );
+  }, []);
 
   // Keyboard: Delete selected, Escape cancel pending, shortcuts
   useEffect(() => {
@@ -187,14 +334,39 @@ export function TradingViewChart({
       const timeScale = chart.timeScale();
       const timeVal = timeScale.coordinateToTime(x);
       const priceVal = series.coordinateToPrice(y);
-      if (timeVal === null || priceVal === null) return null;
+      if (priceVal === null) return null;
 
-      let rawTime = typeof timeVal === "number" ? timeVal : Number(timeVal);
       let rawPrice = Number(priceVal);
+      let rawTime: number | null = null;
 
-      if (magnetActive && candlesRef.current.length > 0) {
+      if (timeVal !== null) {
+        rawTime = typeof timeVal === "number" ? timeVal : Number(timeVal);
+      } else {
+        // Extrapolate time for coordinates in the future space (past the latest candle)
+        const logical = timeScale.coordinateToLogical(x);
+        const candles = candlesRef.current;
+        if (logical !== null && candles.length > 0) {
+          const lastIdx = candles.length - 1;
+          const firstTime = candles[0].time;
+          const lastTime = candles[lastIdx].time;
+          const step = candles.length > 1 ? (lastTime - firstTime) / lastIdx : 3600;
+          const logNum = Number(logical);
+
+          if (logNum > lastIdx) {
+            rawTime = lastTime + (logNum - lastIdx) * step;
+          } else if (logNum < 0) {
+            rawTime = firstTime + logNum * step;
+          } else {
+            rawTime = firstTime + logNum * step;
+          }
+        }
+      }
+
+      if (rawTime === null) return null;
+
+      if (magnetActive && candlesRef.current.length > 0 && timeVal !== null) {
         const closestCandle = candlesRef.current.reduce((prev, curr) =>
-          Math.abs(curr.time - rawTime) < Math.abs(prev.time - rawTime) ? curr : prev
+          Math.abs(curr.time - rawTime!) < Math.abs(prev.time - rawTime!) ? curr : prev
         );
         if (closestCandle) {
           rawTime = closestCandle.time;
@@ -214,9 +386,37 @@ export function TradingViewChart({
     const chart = chartRef.current;
     const series = seriesRef.current;
     if (!chart || !series) return null;
-    const x = chart.timeScale().timeToCoordinate(pt.time as Time);
+
+    const timeScale = chart.timeScale();
+    let x = timeScale.timeToCoordinate(pt.time as Time);
     const y = series.priceToCoordinate(pt.price);
-    if (x === null || y === null) return null;
+    if (y === null) return null;
+
+    if (x === null) {
+      // Extrapolate screen X for future times (beyond last candle) or past times
+      const candles = candlesRef.current;
+      if (candles.length > 0) {
+        const lastIdx = candles.length - 1;
+        const firstTime = candles[0].time;
+        const lastTime = candles[lastIdx].time;
+        const step = candles.length > 1 ? (lastTime - firstTime) / lastIdx : 3600;
+
+        let logicalIdx: number;
+        if (pt.time > lastTime) {
+          logicalIdx = lastIdx + (pt.time - lastTime) / step;
+        } else if (pt.time < firstTime) {
+          logicalIdx = (pt.time - firstTime) / step;
+        } else {
+          logicalIdx = step > 0 ? (pt.time - firstTime) / step : 0;
+        }
+        const coord = timeScale.logicalToCoordinate(logicalIdx as any);
+        if (coord !== null) {
+          x = coord;
+        }
+      }
+    }
+
+    if (x === null) return null;
     return { x: Number(x), y: Number(y) };
   }, []);
 
@@ -253,6 +453,7 @@ export function TradingViewChart({
     if (drawingsHidden && !zoomBox) return;
 
     const isDark = theme === "dark";
+
     const rc = {
       ctx,
       width: canvas.width,
@@ -267,7 +468,7 @@ export function TradingViewChart({
       drawings.forEach((item) => renderDrawing(item, { ...rc, isPreview: false }));
     }
 
-    // Pending multi-point preview
+    // Pending multi-point preview (SOLID line, TV-style — no dashes)
     if (pendingPoints.length > 0 && mousePosRef.current) {
       const currentPt = screenToChartPoint(mousePosRef.current.x, mousePosRef.current.y);
       if (currentPt) {
@@ -279,6 +480,7 @@ export function TradingViewChart({
                 type: "trendline",
                 p1: pendingPoints[0],
                 p2: currentPt,
+                style: { color: "#2962FF", lineWidth: 2, lineStyle: "solid" },
               },
               { ...rc, isPreview: true }
             );
@@ -290,6 +492,7 @@ export function TradingViewChart({
                 p1: pendingPoints[0],
                 p2: pendingPoints[1],
                 p3: currentPt,
+                style: { color: "#2962FF", lineWidth: 2, lineStyle: "solid" },
               },
               { ...rc, isPreview: true }
             );
@@ -305,6 +508,7 @@ export function TradingViewChart({
               type: previewType,
               p1: pendingPoints[0],
               p2: currentPt,
+              style: { color: "#2962FF", lineWidth: 2, lineStyle: "solid" },
             },
             { ...rc, isPreview: true }
           );
@@ -408,7 +612,7 @@ export function TradingViewChart({
       borderVisible: false,
       wickUpColor: "#10b981",
       wickDownColor: "#ef4444",
-    });
+    }, 0);
     seriesRef.current = candleSeries;
 
     const hasVolume = studies.includes("STD;Volume");
@@ -417,58 +621,58 @@ export function TradingViewChart({
     const hasMACD = studies.includes("STD;MACD");
     const hasRSI = studies.includes("STD;RSI");
 
-    let bottomMargin = 0.05;
-    if (hasVolume) bottomMargin += 0.15;
-    if (hasMACD) bottomMargin += 0.2;
-    if (hasRSI) bottomMargin += 0.2;
-
-    candleSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.05, bottom: Math.min(0.65, bottomMargin) },
-    });
-
     const volumeSeries = hasVolume
-      ? chart.addSeries(HistogramSeries, {
-          color: isDark ? "rgba(16, 185, 129, 0.25)" : "rgba(16, 185, 129, 0.2)",
-          priceFormat: { type: "volume" },
-          priceScaleId: "volume_scale",
-        })
+      ? chart.addSeries(
+          HistogramSeries,
+          {
+            color: isDark ? "rgba(16, 185, 129, 0.25)" : "rgba(16, 185, 129, 0.2)",
+            priceFormat: { type: "volume" },
+            priceScaleId: "volume_scale",
+          },
+          0
+        )
       : null;
 
     if (volumeSeries) {
       chart.priceScale("volume_scale").applyOptions({
-        scaleMargins: { top: hasMACD || hasRSI ? 0.55 : 0.75, bottom: 0 },
+        scaleMargins: { top: 0.75, bottom: 0 },
       });
     }
 
     const smaSeries = hasSMA
-      ? chart.addSeries(LineSeries, { color: "#3b82f6", lineWidth: 2, title: "SMA 20" })
+      ? chart.addSeries(LineSeries, { color: "#3b82f6", lineWidth: 2, title: "SMA 20" }, 0)
       : null;
     const emaSeries = hasEMA
-      ? chart.addSeries(LineSeries, { color: "#a855f7", lineWidth: 2, title: "EMA 50" })
+      ? chart.addSeries(LineSeries, { color: "#a855f7", lineWidth: 2, title: "EMA 50" }, 0)
       : null;
+
+    let targetPaneIndex = 1;
 
     let macdFastSeries: ReturnType<typeof chart.addSeries> | null = null;
     let macdSignalSeries: ReturnType<typeof chart.addSeries> | null = null;
     let macdHistSeries: ReturnType<typeof chart.addSeries> | null = null;
 
     if (hasMACD) {
-      macdFastSeries = chart.addSeries(LineSeries, {
-        color: "#2563eb",
-        lineWidth: 2,
-        title: "MACD 12,26",
-        priceScaleId: "macd_scale",
-      });
-      macdSignalSeries = chart.addSeries(LineSeries, {
-        color: "#f97316",
-        lineWidth: 2,
-        title: "Signal 9",
-        priceScaleId: "macd_scale",
-      });
-      macdHistSeries = chart.addSeries(HistogramSeries, { priceScaleId: "macd_scale" });
-      chart.priceScale("macd_scale").applyOptions({
-        scaleMargins: { top: hasRSI ? 0.5 : 0.7, bottom: hasRSI ? 0.22 : 0.02 },
-        visible: true,
-      });
+      const pane = targetPaneIndex++;
+      macdFastSeries = chart.addSeries(
+        LineSeries,
+        {
+          color: "#2563eb",
+          lineWidth: 2,
+          title: "MACD 12,26",
+        },
+        pane
+      );
+      macdSignalSeries = chart.addSeries(
+        LineSeries,
+        {
+          color: "#f97316",
+          lineWidth: 2,
+          title: "Signal 9",
+        },
+        pane
+      );
+      macdHistSeries = chart.addSeries(HistogramSeries, {}, pane);
     }
 
     let rsiSeries: ReturnType<typeof chart.addSeries> | null = null;
@@ -476,30 +680,36 @@ export function TradingViewChart({
     let rsiLowerSeries: ReturnType<typeof chart.addSeries> | null = null;
 
     if (hasRSI) {
-      rsiSeries = chart.addSeries(LineSeries, {
-        color: "#ec4899",
-        lineWidth: 2,
-        title: "RSI 14",
-        priceScaleId: "rsi_scale",
-      });
-      rsiUpperSeries = chart.addSeries(LineSeries, {
-        color: isDark ? "rgba(239, 68, 68, 0.6)" : "rgba(239, 68, 68, 0.7)",
-        lineWidth: 1,
-        lineStyle: 2,
-        title: "70 OB",
-        priceScaleId: "rsi_scale",
-      });
-      rsiLowerSeries = chart.addSeries(LineSeries, {
-        color: isDark ? "rgba(16, 185, 129, 0.6)" : "rgba(16, 185, 129, 0.7)",
-        lineWidth: 1,
-        lineStyle: 2,
-        title: "30 OS",
-        priceScaleId: "rsi_scale",
-      });
-      chart.priceScale("rsi_scale").applyOptions({
-        scaleMargins: { top: 0.75, bottom: 0.02 },
-        visible: true,
-      });
+      const pane = targetPaneIndex++;
+      rsiSeries = chart.addSeries(
+        LineSeries,
+        {
+          color: "#ec4899",
+          lineWidth: 2,
+          title: "RSI 14",
+        },
+        pane
+      );
+      rsiUpperSeries = chart.addSeries(
+        LineSeries,
+        {
+          color: isDark ? "rgba(239, 68, 68, 0.8)" : "rgba(239, 68, 68, 0.9)",
+          lineWidth: 1,
+          lineStyle: 2,
+          title: "70 OB",
+        },
+        pane
+      );
+      rsiLowerSeries = chart.addSeries(
+        LineSeries,
+        {
+          color: isDark ? "rgba(16, 185, 129, 0.8)" : "rgba(16, 185, 129, 0.9)",
+          lineWidth: 1,
+          lineStyle: 2,
+          title: "30 OS",
+        },
+        pane
+      );
     }
 
     fetchCandles(activeItem, interval)
@@ -633,7 +843,13 @@ export function TradingViewChart({
           rsiLowerSeries.setData(lowerData);
         }
 
-        chart.timeScale().fitContent();
+        // Show a sensible recent window; full history stays loaded for scroll/zoom
+        const barCount = data.length;
+        const visibleBars = Math.min(120, Math.max(40, Math.floor(barCount * 0.25)));
+        chart.timeScale().setVisibleLogicalRange({
+          from: Math.max(0, barCount - visibleBars),
+          to: barCount + 5,
+        });
         drawOverlayRef.current();
       })
       .catch(() => undefined);
@@ -846,9 +1062,24 @@ export function TradingViewChart({
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (drawingsLocked && activeTool !== "zoom") return;
+    // Close any open panels on new mousedown
+    setSettingsPanel(null);
+    setContextMenu(null);
+
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+
+    const canvas = overlayCanvasRef.current;
+    const canvasH = canvas?.height || 520;
+    const separatorY = Math.round(canvasH * (1 - indicatorHeightRatioRef.current));
+    const hasIndicators = studies.some((s) => ["STD;Volume", "STD;MACD", "STD;RSI"].includes(s));
+
+    if (hasIndicators && Math.abs(y - separatorY) <= 8) {
+      isDraggingSeparatorRef.current = true;
+      requestAnimationFrame(() => drawOverlayRef.current());
+      return;
+    }
 
     if (activeTool === "zoom") {
       zoomStartRef.current = { x, y };
@@ -869,50 +1100,22 @@ export function TradingViewChart({
       if (selectedDrawingId) {
         const item = drawings.find((d) => d.id === selectedDrawingId);
         if (item) {
-          if (item.p1) {
-            const s1 = chartPointToScreen(item.p1);
-            if (s1 && Math.hypot(x - s1.x, y - s1.y) <= 10) {
-              dragRef.current = {
-                drawingId: item.id,
-                part: "p1",
-                startMouse: { x, y },
-                initialScreenP1: { x: s1.x, y: s1.y },
-                initialScreenP2: item.p2 ? chartPointToScreen(item.p2) : null,
-                initialScreenP3: item.p3 ? chartPointToScreen(item.p3) : null,
-                initialScreenPoints: null,
-              };
-              return;
-            }
-          }
-          if (item.p2) {
-            const s2 = chartPointToScreen(item.p2);
-            if (s2 && Math.hypot(x - s2.x, y - s2.y) <= 10) {
-              dragRef.current = {
-                drawingId: item.id,
-                part: "p2",
-                startMouse: { x, y },
-                initialScreenP1: item.p1 ? chartPointToScreen(item.p1) : null,
-                initialScreenP2: { x: s2.x, y: s2.y },
-                initialScreenP3: item.p3 ? chartPointToScreen(item.p3) : null,
-                initialScreenPoints: null,
-              };
-              return;
-            }
-          }
-          if (item.p3) {
-            const s3 = chartPointToScreen(item.p3);
-            if (s3 && Math.hypot(x - s3.x, y - s3.y) <= 10) {
-              dragRef.current = {
-                drawingId: item.id,
-                part: "p3",
-                startMouse: { x, y },
-                initialScreenP1: item.p1 ? chartPointToScreen(item.p1) : null,
-                initialScreenP2: item.p2 ? chartPointToScreen(item.p2) : null,
-                initialScreenP3: { x: s3.x, y: s3.y },
-                initialScreenPoints: null,
-              };
-              return;
-            }
+          // Use the new hitTestHandle helper for precise handle detection
+          const handle = hitTestHandle(item, x, y, chartPointToScreen);
+          if (handle) {
+            const s1 = item.p1 ? chartPointToScreen(item.p1) : null;
+            const s2 = item.p2 ? chartPointToScreen(item.p2) : null;
+            const s3 = item.p3 ? chartPointToScreen(item.p3) : null;
+            dragRef.current = {
+              drawingId: item.id,
+              part: handle,
+              startMouse: { x, y },
+              initialScreenP1: s1,
+              initialScreenP2: s2,
+              initialScreenP3: s3,
+              initialScreenPoints: null,
+            };
+            return;
           }
         }
       }
@@ -945,6 +1148,40 @@ export function TradingViewChart({
     }
   };
 
+  /** Double-click: open settings panel for the hit drawing */
+  const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const hit = findDrawingAt(x, y);
+    if (hit) {
+      e.preventDefault();
+      setSettingsPanel({
+        drawingId: hit.id,
+        pos: { x: e.clientX + 8, y: e.clientY - 12 },
+      });
+      setContextMenu(null);
+      setSelectedDrawingId(hit.id);
+    }
+  };
+
+  /** Right-click: show context menu */
+  const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const hit = findDrawingAt(x, y);
+    if (hit) {
+      setContextMenu({
+        drawingId: hit.id,
+        pos: { x: e.clientX, y: e.clientY },
+      });
+      setSettingsPanel(null);
+      setSelectedDrawingId(hit.id);
+    }
+  };
+
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -952,6 +1189,37 @@ export function TradingViewChart({
     mousePosRef.current = { x, y };
 
     const canvas = overlayCanvasRef.current;
+    const canvasH = canvas?.height || 520;
+    const separatorY = Math.round(canvasH * (1 - indicatorHeightRatioRef.current));
+    const hasIndicators = studies.some((s) => ["STD;Volume", "STD;MACD", "STD;RSI"].includes(s));
+
+    // Handle separator drag
+    if (isDraggingSeparatorRef.current) {
+      const newRatio = Math.max(0.10, Math.min(0.75, (canvasH - y) / canvasH));
+      setIndicatorHeightRatio(newRatio);
+      if (chartRef.current) {
+        applyScaleMargins(chartRef.current, newRatio, studies);
+      }
+      if (canvas) canvas.style.cursor = "ns-resize";
+      requestAnimationFrame(() => drawOverlayRef.current());
+      return;
+    }
+
+    // Hover check over pane separator
+    if (hasIndicators && Math.abs(y - separatorY) <= 8) {
+      if (canvas) {
+        canvas.style.cursor = "ns-resize";
+        canvas.style.pointerEvents = "auto";
+      }
+      if (!isHoveringSeparatorRef.current) {
+        isHoveringSeparatorRef.current = true;
+        requestAnimationFrame(() => drawOverlayRef.current());
+      }
+      return;
+    } else if (isHoveringSeparatorRef.current) {
+      isHoveringSeparatorRef.current = false;
+      requestAnimationFrame(() => drawOverlayRef.current());
+    }
 
     // Zoom box drag
     if (zoomStartRef.current && activeTool === "zoom") {
@@ -1012,7 +1280,33 @@ export function TradingViewChart({
     if (activeTool === "crosshair") {
       const hit = findDrawingAt(x, y);
       if (canvas) {
-        if (hit || selectedDrawingId !== null) {
+        if (selectedDrawingId) {
+          // Check if over a handle → resize cursor
+          const selItem = drawings.find((d) => d.id === selectedDrawingId);
+          if (selItem) {
+            const handle = hitTestHandle(selItem, x, y, chartPointToScreen);
+            if (handle) {
+              // p1/p2 handles: directional resize cursor based on angle
+              const s1 = selItem.p1 ? chartPointToScreen(selItem.p1) : null;
+              const s2 = selItem.p2 ? chartPointToScreen(selItem.p2) : null;
+              if (s1 && s2) {
+                const angle = Math.abs(Math.atan2(s2.y - s1.y, s2.x - s1.x) * 180 / Math.PI);
+                if (angle > 67.5) canvas.style.cursor = "ns-resize";
+                else if (angle > 22.5) canvas.style.cursor = "nwse-resize";
+                else canvas.style.cursor = "ew-resize";
+              } else {
+                canvas.style.cursor = "crosshair";
+              }
+              canvas.style.pointerEvents = "auto";
+              return;
+            }
+          }
+        }
+        if (hit) {
+          // Over a line body → show move cursor
+          canvas.style.cursor = "move";
+          canvas.style.pointerEvents = "auto";
+        } else if (selectedDrawingId !== null) {
           canvas.style.cursor = "pointer";
           canvas.style.pointerEvents = "auto";
         } else {
@@ -1051,6 +1345,12 @@ export function TradingViewChart({
   };
 
   const handleMouseUp = () => {
+    if (isDraggingSeparatorRef.current) {
+      isDraggingSeparatorRef.current = false;
+      requestAnimationFrame(() => drawOverlayRef.current());
+      return;
+    }
+
     if (dragRef.current) {
       dragRef.current = null;
     }
@@ -1088,17 +1388,49 @@ export function TradingViewChart({
 
     const chart = chartRef.current;
     if (!chart) return;
-    const timeScale = chart.timeScale();
-    const range = timeScale.getVisibleLogicalRange();
-    if (!range) return;
 
     const deltaSign = Math.sign(e.deltaY);
     if (deltaSign === 0) return;
-    const zoomStep = 1 + deltaSign * 0.035;
 
     const canvas = overlayCanvasRef.current;
     const rect = canvas?.getBoundingClientRect() || containerRef.current?.getBoundingClientRect();
     const mouseX = rect ? e.clientX - rect.left : (canvas?.width || 800) / 2;
+    const mouseY = rect ? e.clientY - rect.top : (canvas?.height || 520) / 2;
+    const canvasW = canvas?.width || 800;
+    const canvasH = canvas?.height || 520;
+
+    const ratio = indicatorHeightRatioRef.current;
+    const mainChartBottomY = Math.round(canvasH * (1 - ratio));
+    const hasMACD = studies.includes("STD;MACD");
+    const hasRSI = studies.includes("STD;RSI");
+
+    // Right-side price scale vertical zoom check (when mouse is over the right axis area)
+    if (mouseX > canvasW - 65) {
+      const zoomFactor = deltaSign > 0 ? 0.88 : 1.14;
+
+      if (hasRSI && mouseY >= Math.round(canvasH * (1 - ratio * 0.45))) {
+        const nextZ = Math.max(0.3, Math.min(3.5, rsiZoomRef.current * zoomFactor));
+        setRsiZoom(nextZ);
+        applyScaleMargins(chart, ratio, studies, macdZoomRef.current, nextZ, mainZoomRef.current);
+      } else if (hasMACD && mouseY >= mainChartBottomY) {
+        const nextZ = Math.max(0.3, Math.min(3.5, macdZoomRef.current * zoomFactor));
+        setMacdZoom(nextZ);
+        applyScaleMargins(chart, ratio, studies, nextZ, rsiZoomRef.current, mainZoomRef.current);
+      } else if (mouseY < mainChartBottomY) {
+        const nextZ = Math.max(0.3, Math.min(3.5, mainZoomRef.current * zoomFactor));
+        setMainZoom(nextZ);
+        applyScaleMargins(chart, ratio, studies, macdZoomRef.current, rsiZoomRef.current, nextZ);
+      }
+      requestAnimationFrame(() => drawOverlayRef.current());
+      return;
+    }
+
+    // Default horizontal time-scale zoom when mouse is over chart body
+    const timeScale = chart.timeScale();
+    const range = timeScale.getVisibleLogicalRange();
+    if (!range) return;
+
+    const zoomStep = 1 + deltaSign * 0.035;
     const logicalPos = timeScale.coordinateToLogical(mouseX);
     const pivot = logicalPos !== null ? Number(logicalPos) : (range.from + range.to) / 2;
 
@@ -1133,6 +1465,17 @@ export function TradingViewChart({
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+
+    const canvasH = canvas.height || 520;
+    const separatorY = Math.round(canvasH * (1 - indicatorHeightRatioRef.current));
+    const hasIndicators = studies.some((s) => ["STD;Volume", "STD;MACD", "STD;RSI"].includes(s));
+
+    if (hasIndicators && Math.abs(y - separatorY) <= 8) {
+      canvas.style.pointerEvents = "auto";
+      canvas.style.cursor = "ns-resize";
+      return;
+    }
+
     const hit = findDrawingAt(x, y);
     if (hit || selectedDrawingId !== null) {
       canvas.style.pointerEvents = "auto";
@@ -1147,13 +1490,17 @@ export function TradingViewChart({
     setActiveTool(tool);
     setPendingPoints([]);
     setSelectedDrawingId(null);
+    setSettingsPanel(null);
+    setContextMenu(null);
   };
 
   const isDrawingToolActive =
     activeTool !== "crosshair" ||
     pendingPoints.length > 0 ||
     selectedDrawingId !== null ||
-    !!zoomBox;
+    !!zoomBox ||
+    isHoveringSeparatorRef.current ||
+    isDraggingSeparatorRef.current;
 
   const cursorForTool = () => {
     if (activeTool === "crosshair") return "default";
@@ -1188,6 +1535,7 @@ export function TradingViewChart({
         onClearDrawings={handleClearDrawings}
       />
       <div
+        ref={chartWrapperRef}
         onMouseMove={handleWrapperMouseMove}
         onWheel={handleWheel}
         style={{
@@ -1220,6 +1568,8 @@ export function TradingViewChart({
             zIndex: 10,
           }}
           onClick={handleCanvasClick}
+          onDoubleClick={handleDoubleClick}
+          onContextMenu={handleContextMenu}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -1234,6 +1584,47 @@ export function TradingViewChart({
           </div>
         )}
       </div>
+
+      {/* Floating settings panel (double-click) */}
+      {settingsPanel && (() => {
+        const drawing = drawings.find((d) => d.id === settingsPanel.drawingId);
+        if (!drawing) return null;
+        return (
+          <TrendLineSettings
+            pos={settingsPanel.pos}
+            style={drawing.style ?? {}}
+            onStyleChange={(patch) => updateDrawingStyle(settingsPanel.drawingId, patch)}
+            onClone={() => cloneDrawing(settingsPanel.drawingId)}
+            onDelete={() => {
+              setDrawings((prev) => prev.filter((d) => d.id !== settingsPanel.drawingId));
+              setSelectedDrawingId(null);
+              setSettingsPanel(null);
+            }}
+            onClose={() => setSettingsPanel(null)}
+          />
+        );
+      })()}
+
+      {/* Context menu (right-click) */}
+      {contextMenu && (() => {
+        const drawing = drawings.find((d) => d.id === contextMenu.drawingId);
+        if (!drawing) return null;
+        return (
+          <TrendLineSettings
+            pos={contextMenu.pos}
+            style={drawing.style ?? {}}
+            onStyleChange={(patch) => updateDrawingStyle(contextMenu.drawingId, patch)}
+            onClone={() => cloneDrawing(contextMenu.drawingId)}
+            onDelete={() => {
+              setDrawings((prev) => prev.filter((d) => d.id !== contextMenu.drawingId));
+              setSelectedDrawingId(null);
+              setContextMenu(null);
+            }}
+            onClose={() => setContextMenu(null)}
+            contextMenuOnly
+          />
+        );
+      })()}
     </div>
   );
 }

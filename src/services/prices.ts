@@ -382,6 +382,89 @@ export interface CandleData {
   volume?: number;
 }
 
+type BinanceKline = [number, string, string, string, string, string];
+
+function mapBinanceKlines(raw: BinanceKline[]): CandleData[] {
+  return raw.map((k) => ({
+    time: Math.floor(k[0] / 1000),
+    open: parseFloat(k[1]),
+    high: parseFloat(k[2]),
+    low: parseFloat(k[3]),
+    close: parseFloat(k[4]),
+    volume: parseFloat(k[5]),
+  }));
+}
+
+/**
+ * Fetch Binance klines, paginating backwards so charts get real history
+ * (Binance caps each request at 1000 bars).
+ */
+async function fetchBinanceCandles(
+  pair: string,
+  bInterval: string,
+  targetBars = 1500,
+): Promise<CandleData[]> {
+  const pageLimit = 1000;
+  const pages = Math.max(1, Math.ceil(targetBars / pageLimit));
+  let endTime: number | undefined;
+  const chunks: BinanceKline[] = [];
+
+  for (let page = 0; page < pages; page++) {
+    const params = new URLSearchParams({
+      symbol: pair,
+      interval: bInterval,
+      limit: String(pageLimit),
+    });
+    if (endTime !== undefined) {
+      params.set("endTime", String(endTime));
+    }
+
+    const res = await fetch(`${BINANCE_BASE}/api/v3/klines?${params.toString()}`);
+    if (!res.ok) break;
+
+    const raw = (await res.json()) as BinanceKline[];
+    if (!Array.isArray(raw) || raw.length === 0) break;
+
+    chunks.unshift(...raw);
+    // Next page ends just before the oldest bar we already have
+    endTime = raw[0][0] - 1;
+
+    // Last page (fewer bars than limit) — no more history
+    if (raw.length < pageLimit) break;
+  }
+
+  if (chunks.length === 0) return [];
+
+  // De-dupe by open time and sort ascending
+  const byTime = new Map<number, BinanceKline>();
+  for (const k of chunks) byTime.set(k[0], k);
+  return mapBinanceKlines(
+    Array.from(byTime.values()).sort((a, b) => a[0] - b[0]),
+  );
+}
+
+/** How many bars to aim for per chart interval */
+function targetBarsForInterval(interval: string): number {
+  switch (interval) {
+    case "1":
+      return 1000; // ~16h of 1m
+    case "5":
+      return 1500; // ~5 days of 5m
+    case "15":
+      return 1500; // ~15 days of 15m
+    case "60":
+      return 1500; // ~2 months of 1h
+    case "240":
+      return 1500; // ~8 months of 4h
+    case "D":
+      return 1500; // ~4 years of daily
+    case "W":
+      return 500; // ~10 years of weekly
+    default:
+      return 1500;
+  }
+}
+
 export async function fetchCandles(
   item: SymbolInfo,
   interval: string = "60",
@@ -396,28 +479,13 @@ export async function fetchCandles(
     "W": "1w",
   };
   const bInterval = binanceIntervalMap[interval] || "1h";
+  const targetBars = targetBarsForInterval(interval);
 
   const pair = toBinancePair(item);
   if (pair && !invalidBinancePairs.has(pair)) {
     try {
-      const res = await fetch(
-        `${BINANCE_BASE}/api/v3/klines?symbol=${pair}&interval=${bInterval}&limit=200`,
-      );
-      if (res.ok) {
-        const raw = (await res.json()) as Array<
-          [number, string, string, string, string, string]
-        >;
-        if (Array.isArray(raw) && raw.length > 0) {
-          return raw.map((k) => ({
-            time: Math.floor(k[0] / 1000),
-            open: parseFloat(k[1]),
-            high: parseFloat(k[2]),
-            low: parseFloat(k[3]),
-            close: parseFloat(k[4]),
-            volume: parseFloat(k[5]),
-          }));
-        }
-      }
+      const candles = await fetchBinanceCandles(pair, bInterval, targetBars);
+      if (candles.length > 0) return candles;
     } catch {
       // Fall through
     }
@@ -426,26 +494,28 @@ export async function fetchCandles(
   const yahooSym = toYahooSymbol(item) || toCryptoYahooSymbol(item);
   if (yahooSym) {
     try {
+      // Yahoo intervals — use best available for each UI timeframe
       const yIntervalMap: Record<string, string> = {
         "1": "1m",
         "5": "5m",
-        "15": "5m",
+        "15": "15m",
         "60": "60m",
         "240": "60m",
         "D": "1d",
         "W": "1wk",
       };
+      // Wider ranges so charts show months/years of history, not a few days
       const rangeMap: Record<string, string> = {
-        "1": "1d",
-        "5": "5d",
-        "15": "5d",
-        "60": "1mo",
-        "240": "3mo",
-        "D": "1y",
-        "W": "2y",
+        "1": "7d", // Yahoo 1m max ~7 days
+        "5": "60d",
+        "15": "60d",
+        "60": "2y",
+        "240": "2y",
+        "D": "10y",
+        "W": "max",
       };
       const yInt = yIntervalMap[interval] || "60m";
-      const yRange = rangeMap[interval] || "1mo";
+      const yRange = rangeMap[interval] || "2y";
       const url = `${YAHOO_BASE}/v8/finance/chart/${encodeURIComponent(
         yahooSym,
       )}?interval=${yInt}&range=${yRange}`;
@@ -489,7 +559,17 @@ function generateSyntheticCandles(
   basePrice: number,
   interval: string,
 ): CandleData[] {
-  const count = 120;
+  // Enough bars to feel like a real multi-month chart when APIs fail
+  const countMap: Record<string, number> = {
+    "1": 500,
+    "5": 800,
+    "15": 800,
+    "60": 720, // 30 days of 1h
+    "240": 540, // 90 days of 4h
+    "D": 365,
+    "W": 156,
+  };
+  const count = countMap[interval] || 720;
   const now = Math.floor(Date.now() / 1000);
   const stepSecondsMap: Record<string, number> = {
     "1": 60,

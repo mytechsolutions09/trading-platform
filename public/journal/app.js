@@ -185,7 +185,7 @@ const RULE_VIOLATIONS = [
 ];
 
 // ── Router ────────────────────────────────────────────────────────────
-const PAGES = ['dashboard', 'trades', 'analytics', 'psychology', 'journal', 'settings'];
+const PAGES = ['dashboard', 'trades', 'analytics', 'charts', 'psychology', 'journal', 'settings'];
 let currentPage = 'dashboard';
 
 function navigate(page) {
@@ -210,6 +210,7 @@ function renderPage(page) {
     case 'dashboard':   renderDashboard(el);   break;
     case 'trades':      renderTrades(el);       break;
     case 'analytics':   renderAnalytics(el);    break;
+    case 'charts':      renderChartsGallery(el); break;
     case 'psychology':  renderPsychology(el);   break;
     case 'journal':     renderJournal(el);      break;
     case 'settings':    renderSettings(el);     break;
@@ -1218,10 +1219,14 @@ function init() {
   document.getElementById('modal-close').onclick = closeTradeModal;
   document.getElementById('modal-submit').onclick = handleTradeSubmit;
   document.getElementById('detail-close').onclick = () => document.getElementById('detail-modal').close();
+  const ccClose = document.getElementById('custom-chart-close');
+  if (ccClose) ccClose.onclick = () => document.getElementById('custom-chart-modal')?.close();
+  const pinClose = document.getElementById('pinterest-modal-close');
+  if (pinClose) pinClose.onclick = () => document.getElementById('pinterest-import-modal')?.close();
 
   // Fallback light-dismiss for dialog (Safari)
-  [document.getElementById('trade-modal'), document.getElementById('detail-modal')].forEach(dlg => {
-    if (!('closedBy' in HTMLDialogElement.prototype)) {
+  [document.getElementById('trade-modal'), document.getElementById('detail-modal'), document.getElementById('custom-chart-modal'), document.getElementById('pinterest-import-modal')].forEach(dlg => {
+    if (dlg && !('closedBy' in HTMLDialogElement.prototype)) {
       dlg.addEventListener('click', e => {
         if (e.target !== dlg) return;
         const r = dlg.getBoundingClientRect();
@@ -1246,6 +1251,24 @@ function init() {
     });
   }
 
+  // Sidebar collapse toggle
+  const collapseBtn = document.getElementById('sidebar-toggle-btn');
+  const isCollapsed = localStorage.getItem('tj_sidebar_collapsed') === 'true';
+  if (isCollapsed) {
+    document.body.classList.add('sidebar-collapsed');
+    document.querySelector('.sidebar')?.classList.add('collapsed');
+  }
+
+  if (collapseBtn) {
+    collapseBtn.addEventListener('click', () => {
+      document.body.classList.toggle('sidebar-collapsed');
+      document.querySelector('.sidebar')?.classList.toggle('collapsed');
+      const collapsedNow = document.body.classList.contains('sidebar-collapsed');
+      localStorage.setItem('tj_sidebar_collapsed', collapsedNow);
+      collapseBtn.title = collapsedNow ? 'Expand sidebar' : 'Collapse sidebar';
+    });
+  }
+
   // Route
   const hash = location.hash.slice(1) || 'dashboard';
   loadFromSql().then(() => {
@@ -1253,9 +1276,19 @@ function init() {
   });
 }
 
+function saveCustomCharts(chartsList) {
+  LS.set('tj_custom_charts', chartsList);
+  fetch('/api/journal/custom-charts/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(chartsList),
+  }).catch(() => undefined);
+}
+
 async function loadFromSql() {
   let dbTradesEmpty = false;
   let dbNotesEmpty = false;
+  let dbChartsEmpty = false;
 
   try {
     const resTrades = await fetch('/api/journal/trades');
@@ -1287,11 +1320,29 @@ async function loadFromSql() {
     console.warn('Failed to load notes from SQL:', err);
   }
 
+  try {
+    const resCharts = await fetch('/api/journal/custom-charts');
+    if (resCharts.ok) {
+      const data = await resCharts.json();
+      if (data && data.length > 0) {
+        LS.set('tj_custom_charts', data);
+      } else {
+        dbChartsEmpty = true;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load custom charts from SQL:', err);
+  }
+
   if (dbTradesEmpty && trades && trades.length > 0) {
     saveTrades();
   }
   if (dbNotesEmpty && journal && Object.keys(journal).length > 0) {
     saveJournal();
+  }
+  const localCustom = LS.get('tj_custom_charts', []);
+  if (dbChartsEmpty && localCustom && localCustom.length > 0) {
+    saveCustomCharts(localCustom);
   }
 }
 
@@ -1303,3 +1354,658 @@ window.openTradeDetail   = openTradeDetail;
 window.deleteTrade       = deleteTrade;
 window.selectJournalDate = selectJournalDate;
 window.exportData        = exportData;
+
+/* ══════════════════════════════════════════════════════════════════════
+   EDUCATIONAL CHARTS GALLERY
+   ══════════════════════════════════════════════════════════════════════ */
+
+const EDUCATIONAL_CHARTS = [
+  {
+    id: 'double-bottom',
+    title: 'Double Bottom (W Pattern)',
+    category: 'Reversals',
+    badgeClass: 'badge-reversal',
+    winRate: '84% Win Rate',
+    rr: '1 : 3.0 RR',
+    description: 'Bullish reversal pattern formed after a downtrend. Look for two price troughs at equal support levels followed by a neckline breakout.',
+    rules: [
+      'Identify two distinct troughs bouncing from identical support level.',
+      'Wait for a candle close ABOVE the neckline resistance line.',
+      'Enter on breakout or on the retest of the broken neckline.',
+      'Stop Loss: Placed just below the right trough.',
+      'Target: Equal to the vertical distance from trough to neckline.'
+    ],
+    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#10b981" stop-opacity="0.3"/><stop offset="100%" stop-color="#10b981" stop-opacity="0"/></linearGradient></defs>
+      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+      <path d="M 20,40 L 80,160 L 140,85 L 200,160 L 260,75 L 380,30" fill="none" stroke="#10b981" stroke-width="3"/>
+      <path d="M 260,75 L 380,30 L 380,75 Z" fill="url(#g1)"/>
+      <line x1="100" y1="85" x2="380" y2="85" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="4,4"/>
+      <text x="280" y="80" fill="#06b6d4" font-size="10" font-weight="bold">NECKLINE (BREAKOUT)</text>
+      <line x1="60" y1="160" x2="220" y2="160" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3,3"/>
+      <text x="90" y="175" fill="#ef4444" font-size="10">SUPPORT (TROUGHS 1 & 2)</text>
+      <circle cx="260" cy="75" r="5" fill="#10b981"/>
+      <text x="270" y="65" fill="#10b981" font-size="11" font-weight="bold">ENTRY ↑</text>
+    </svg>`
+  },
+  {
+    id: 'bull-flag',
+    title: 'Bull Flag Continuation',
+    category: 'Continuations',
+    badgeClass: 'badge-continuation',
+    winRate: '88% Win Rate',
+    rr: '1 : 3.5 RR',
+    description: 'High-probability trend continuation pattern. A steep vertical move (flagpole) followed by tight downward sloping channel (flag).',
+    rules: [
+      'Identify a strong initial price impulse (Flagpole).',
+      'Wait for downward sloping parallel channel consolidation with declining volume.',
+      'Entry on upper flag boundary trendline breakout.',
+      'Stop Loss: Below the lowest swing low inside the flag.',
+      'Target: Height of original flagpole added to breakout point.'
+    ],
+    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
+      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+      <path d="M 30,190 L 160,50" fill="none" stroke="#10b981" stroke-width="4"/>
+      <path d="M 160,50 L 200,90 L 220,70 L 260,110 L 280,80 L 380,20" fill="none" stroke="#06b6d4" stroke-width="3"/>
+      <line x1="150" y1="40" x2="290" y2="75" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,4"/>
+      <line x1="190" y1="95" x2="270" y2="120" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,4"/>
+      <circle cx="280" cy="80" r="5" fill="#10b981"/>
+      <text x="290" y="95" fill="#10b981" font-size="11" font-weight="bold">BREAKOUT ENTRY ↑</text>
+      <text x="40" y="120" fill="#10b981" font-size="11" font-weight="bold">FLAGPOLE</text>
+    </svg>`
+  },
+  {
+    id: 'head-and-shoulders',
+    title: 'Head & Shoulders Top',
+    category: 'Reversals',
+    badgeClass: 'badge-reversal',
+    winRate: '79% Win Rate',
+    rr: '1 : 2.8 RR',
+    description: 'Bearish reversal pattern signaling exhaustion of an uptrend. Consists of a peak (Left Shoulder), higher peak (Head), and lower peak (Right Shoulder).',
+    rules: [
+      'Identify 3 peaks: Middle peak (Head) must be higher than left & right shoulders.',
+      'Draw the Neckline connecting the two reaction lows.',
+      'Wait for candle close BELOW the neckline for confirmation.',
+      'Stop Loss: Above the Right Shoulder high.',
+      'Target: Vertical height from Head to Neckline projected down.'
+    ],
+    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
+      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+      <path d="M 20,160 L 70,80 L 120,130 L 190,30 L 260,130 L 310,90 L 370,190" fill="none" stroke="#ef4444" stroke-width="3"/>
+      <line x1="60" y1="130" x2="380" y2="130" stroke="#f97316" stroke-width="1.5" stroke-dasharray="4,4"/>
+      <text x="270" y="125" fill="#f97316" font-size="10">NECKLINE BREAKDOWN</text>
+      <text x="55" y="70" fill="#94a3b8" font-size="10">L. SHOULDER</text>
+      <text x="175" y="20" fill="#ef4444" font-size="11" font-weight="bold">HEAD</text>
+      <text x="295" y="80" fill="#94a3b8" font-size="10">R. SHOULDER</text>
+      <circle cx="345" cy="150" r="5" fill="#ef4444"/>
+      <text x="270" y="165" fill="#ef4444" font-size="11" font-weight="bold">SHORT ENTRY ↓</text>
+    </svg>`
+  },
+  {
+    id: 'ascending-triangle',
+    title: 'Ascending Triangle Breakout',
+    category: 'Continuations',
+    badgeClass: 'badge-continuation',
+    winRate: '85% Win Rate',
+    rr: '1 : 3.0 RR',
+    description: 'Bullish pattern characterized by a flat horizontal resistance level and a series of higher lows pushing price into a tighter range.',
+    rules: [
+      'Flat horizontal resistance with 2+ touches.',
+      'Ascending trendline connecting higher swing lows.',
+      'Enter on decisive breakout candle closing above resistance.',
+      'Stop Loss: Below the most recent swing low.',
+      'Target: Height of the triangle base.'
+    ],
+    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
+      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+      <line x1="50" y1="60" x2="320" y2="60" stroke="#ef4444" stroke-width="2"/>
+      <text x="180" y="52" fill="#ef4444" font-size="10" font-weight="bold">HORIZONTAL RESISTANCE</text>
+      <line x1="50" y1="180" x2="300" y2="60" stroke="#10b981" stroke-width="2"/>
+      <path d="M 50,180 L 100,60 L 150,130 L 200,60 L 250,90 L 290,60 L 370,20" fill="none" stroke="#10b981" stroke-width="3"/>
+      <circle cx="290" cy="60" r="5" fill="#10b981"/>
+      <text x="305" y="75" fill="#10b981" font-size="11" font-weight="bold">BREAKOUT ↑</text>
+    </svg>`
+  },
+  {
+    id: 'cup-and-handle',
+    title: 'Cup & Handle Breakout',
+    category: 'Continuations',
+    badgeClass: 'badge-continuation',
+    winRate: '86% Win Rate',
+    rr: '1 : 3.2 RR',
+    description: 'Bullish continuation pattern resembling a cup with a handle. The cup shows a rounded U-shape recovery, followed by a slight pullback (handle).',
+    rules: [
+      'Smooth U-shaped cup recovery (avoid V-shaped abrupt bounces).',
+      'Handle consolidation should not drop lower than upper 50% of cup.',
+      'Enter when price breaks above resistance rim of the cup.',
+      'Stop Loss: Below the bottom of the handle.',
+      'Target: Depth of the cup added to breakout price.'
+    ],
+    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
+      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+      <line x1="40" y1="70" x2="340" y2="70" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="4,4"/>
+      <path d="M 40,70 Q 160,200 270,70" fill="none" stroke="#10b981" stroke-width="3"/>
+      <path d="M 270,70 L 290,105 L 310,85 L 320,100 L 380,30" fill="none" stroke="#10b981" stroke-width="3"/>
+      <text x="140" y="160" fill="#10b981" font-size="11" font-weight="bold">U-SHAPED CUP</text>
+      <text x="275" y="120" fill="#f59e0b" font-size="10">HANDLE</text>
+      <circle cx="320" cy="80" r="5" fill="#10b981"/>
+      <text x="330" y="95" fill="#10b981" font-size="11" font-weight="bold">ENTRY ↑</text>
+    </svg>`
+  },
+  {
+    id: 'support-retest',
+    title: 'Support/Resistance Retest (S/R Flip)',
+    category: 'Market Structure',
+    badgeClass: 'badge-structure',
+    winRate: '87% Win Rate',
+    rr: '1 : 3.5 RR',
+    description: 'Core market structure trade setup. After a key level is broken, old resistance turns into new support (or vice versa).',
+    rules: [
+      'Mark major horizontal support or resistance level with multiple touches.',
+      'Wait for a clean breakout candle closing past the key level.',
+      'Do not chase the breakout; wait for price to pull back and retest the broken level.',
+      'Look for rejection candles (pin bars/engulfing) on the retest.',
+      'Stop Loss: Placed on opposite side of retest zone.'
+    ],
+    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
+      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+      <line x1="20" y1="120" x2="380" y2="120" stroke="#a855f7" stroke-width="2"/>
+      <text x="30" y="110" fill="#a855f7" font-size="10" font-weight="bold">OLD RESISTANCE → NEW SUPPORT</text>
+      <path d="M 20,180 L 70,120 L 110,160 L 160,120 L 220,40 L 270,120 L 380,30" fill="none" stroke="#10b981" stroke-width="3"/>
+      <circle cx="270" cy="120" r="8" fill="none" stroke="#06b6d4" stroke-width="2"/>
+      <circle cx="270" cy="120" r="4" fill="#06b6d4"/>
+      <text x="240" y="145" fill="#06b6d4" font-size="11" font-weight="bold">PERFECT RETEST (ENTRY)</text>
+    </svg>`
+  },
+  {
+    id: 'smc-liquidity-sweep',
+    title: 'Liquidity Sweep & Order Block',
+    category: 'Market Structure',
+    badgeClass: 'badge-structure',
+    winRate: '89% Win Rate',
+    rr: '1 : 4.0 RR',
+    description: 'Smart Money Concept (SMC) setup where institutional market makers grab liquidity above/below equal highs/lows before reversing sharply.',
+    rules: [
+      'Identify obvious liquidity pools (Equal Highs or Equal Lows).',
+      'Wait for a fast liquidity sweep wick piercing the key level.',
+      'Look for Displacement (a fast impulse move leaving a Fair Value Gap / FVG).',
+      'Enter on return to the Order Block or FVG zone.',
+      'Stop Loss: Just beyond the liquidity sweep wick extreme.'
+    ],
+    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
+      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+      <line x1="30" y1="150" x2="220" y2="150" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="3,3"/>
+      <text x="40" y="142" fill="#f59e0b" font-size="10">EQUAL LOWS (LIQUIDITY POOL 💧)</text>
+      <path d="M 30,80 L 70,150 L 110,90 L 150,150 L 190,175 L 230,60 L 260,100 L 370,20" fill="none" stroke="#10b981" stroke-width="3"/>
+      <line x1="190" y1="150" x2="190" y2="185" stroke="#ef4444" stroke-width="2"/>
+      <circle cx="190" cy="185" r="4" fill="#ef4444"/>
+      <text x="120" y="200" fill="#ef4444" font-size="10" font-weight="bold">LIQUIDITY SWEEP WICK</text>
+      <text x="260" y="115" fill="#10b981" font-size="10" font-weight="bold">FVG / ORDER BLOCK</text>
+    </svg>`
+  },
+  {
+    id: 'bullish-engulfing',
+    title: 'Bullish Engulfing Candlestick',
+    category: 'Candlesticks',
+    badgeClass: 'badge-candlestick',
+    winRate: '80% Win Rate',
+    rr: '1 : 2.5 RR',
+    description: 'Two-candle reversal pattern where a small bearish candle is completely covered (engulfed) by a large bullish candle, signaling strong buyers.',
+    rules: [
+      'Pattern must occur after a downward price move at key support.',
+      'First candle is bearish (red body).',
+      'Second candle is large bullish (green body) completely engulfing the first candle body.',
+      'Enter on close of the engulfing candle.',
+      'Stop Loss: Below the lowest wick of the engulfing candle.'
+    ],
+    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
+      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+      <line x1="40" y1="170" x2="360" y2="170" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4,4"/>
+      <text x="50" y="185" fill="#10b981" font-size="10">KEY SUPPORT ZONE</text>
+      <line x1="140" y1="90" x2="140" y2="155" stroke="#ef4444" stroke-width="2"/>
+      <rect x="130" y="105" width="20" height="35" fill="#ef4444" rx="2"/>
+      <line x1="220" y1="60" x2="220" y2="165" stroke="#10b981" stroke-width="2"/>
+      <rect x="205" y="75" width="30" height="80" fill="#10b981" rx="2"/>
+      <text x="85" y="125" fill="#ef4444" font-size="10">BEARISH</text>
+      <text x="245" y="115" fill="#10b981" font-size="11" font-weight="bold">BULLISH ENGULFING ↑</text>
+    </svg>`
+  }
+];
+
+let chartFilterCategory = 'All';
+
+function renderChartsGallery(el) {
+  const custom = LS.get('tj_custom_charts', []);
+  const allCharts = [...EDUCATIONAL_CHARTS, ...custom];
+  const pinterestCharts = custom.filter(c => c.category === 'Pinterest');
+  const filtered = chartFilterCategory === 'All'
+    ? allCharts
+    : chartFilterCategory === 'My Custom Charts'
+      ? custom.filter(c => c.category !== 'Pinterest')
+      : chartFilterCategory === 'Pinterest'
+        ? pinterestCharts
+        : allCharts.filter(c => c.category === chartFilterCategory);
+
+  el.innerHTML = `
+    <div class="chart-toolbar-header">
+      <div class="chart-filter-bar">
+        ${['All', 'Reversals', 'Continuations', 'Candlesticks', 'Market Structure', 'My Custom Charts'].map(cat => `
+          <button class="chart-filter-pill ${chartFilterCategory === cat ? 'active' : ''}" onclick="filterCharts('${cat}')">
+            ${cat}
+          </button>
+        `).join('')}
+        <button class="chart-filter-pill pinterest-pill ${chartFilterCategory === 'Pinterest' ? 'active' : ''}" onclick="filterCharts('Pinterest')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="margin-right:4px;vertical-align:-1px;"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>
+          Pinterest
+        </button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        ${chartFilterCategory === 'Pinterest' ? `<button class="btn btn-ghost btn-sm pinterest-import-btn" onclick="openPinterestModal()">＋ Import from Pinterest</button>` : ''}
+        <button class="btn btn-primary btn-sm" id="add-custom-chart-btn" onclick="openAddChartModal()">＋ Add Custom Chart</button>
+      </div>
+    </div>
+
+    <!-- Gallery Grid -->
+    <div class="chart-gallery-grid">
+      ${filtered.length ? filtered.map(c => `
+        <div class="chart-card" onclick="openChartModal('${c.id}')">
+          <div class="chart-card-header">
+            <span class="chart-card-title">${c.title}</span>
+            <span class="chart-card-badge ${c.badgeClass || 'badge-structure'}">${c.category}</span>
+          </div>
+          <div class="chart-card-img-wrap">
+            ${c.svg ? c.svg : `<img src="${c.image}" alt="${c.title}" />`}
+          </div>
+          <div class="chart-card-body">
+            <p class="chart-card-desc">${c.description}</p>
+            <div class="chart-card-footer">
+              <span style="color:var(--green);font-weight:700;">${c.winRate || 'High Probability'}</span>
+              <span style="color:var(--cyan);font-weight:600;">${c.rr || '1:3 RR'}</span>
+            </div>
+          </div>
+        </div>
+      `).join('') : `
+        <div style="grid-column: 1/-1; text-align: center; padding: 60px 20px; color: var(--text2);">
+          No chart studies found for "${chartFilterCategory}". Click "Add Custom Chart" above to upload or save your own!
+        </div>
+      `}
+    </div>
+  `;
+
+  const addBtn = document.getElementById('add-custom-chart-btn');
+  if (addBtn) addBtn.onclick = openAddChartModal;
+}
+
+function openChartModal(id) {
+  const custom = LS.get('tj_custom_charts', []);
+  const allCharts = [...EDUCATIONAL_CHARTS, ...custom];
+  const chart = allCharts.find(c => c.id === id);
+  if (!chart) return;
+
+  const modal = document.getElementById('detail-modal');
+  const title = modal.querySelector('#detail-modal-title');
+  const body = modal.querySelector('#detail-body');
+
+  title.textContent = chart.title;
+  const isCustom = chart.id.startsWith('custom-');
+
+  body.innerHTML = `
+    <div style="text-align:center;margin-bottom:16px;">
+      <div style="width:100%;max-height:340px;background:#090d16;border-radius:12px;overflow:hidden;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;padding:12px;">
+        ${chart.svg ? chart.svg : `<img src="${chart.image}" style="max-width:100%;max-height:320px;object-fit:contain;" />`}
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <span class="chart-card-badge ${chart.badgeClass || 'badge-structure'}" style="font-size:.8rem;padding:4px 12px;">${chart.category}</span>
+      <div style="display:flex;gap:12px;font-size:.85rem;font-weight:700;">
+        <span style="color:var(--green);">✓ ${chart.winRate || 'High Win Rate'}</span>
+        <span style="color:var(--cyan);">⚖ ${chart.rr || '1:3 Risk/Reward'}</span>
+      </div>
+    </div>
+
+    <p style="font-size:.9rem;color:var(--text2);line-height:1.6;margin-bottom:16px;">${chart.description}</p>
+
+    <div class="divider"></div>
+    <div class="section-label">📌 Execution Rules & Criteria</div>
+    <ul style="list-style:none;display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+      ${(chart.rules || []).map(r => `
+        <li style="display:flex;align-items:flex-start;gap:8px;font-size:.85rem;color:var(--text);">
+          <span style="color:var(--green);font-weight:bold;">✓</span> <span>${r}</span>
+        </li>
+      `).join('')}
+    </ul>
+
+    ${isCustom ? `
+      <div class="divider"></div>
+      <div style="display:flex;justify-content:flex-end;">
+        <button class="btn btn-ghost" style="color:var(--red);border-color:rgba(239,68,68,0.3);" onclick="deleteCustomChart('${chart.id}')">
+          🗑 Delete Custom Study
+        </button>
+      </div>
+    ` : ''}
+  `;
+
+  const editBtn = modal.querySelector('#detail-edit-btn');
+  if (editBtn) editBtn.style.display = 'none';
+
+  modal.showModal();
+}
+
+function deleteCustomChart(id) {
+  if (!confirm('Are you sure you want to delete this custom chart study?')) return;
+  let custom = LS.get('tj_custom_charts', []);
+  custom = custom.filter(c => c.id !== id);
+  saveCustomCharts(custom);
+
+  fetch(`/api/journal/custom-charts/${id}`, { method: 'DELETE' }).catch(() => undefined);
+
+  document.getElementById('detail-modal')?.close();
+  toast('Custom chart study deleted', 'info');
+  const pageEl = document.querySelector('.page');
+  if (pageEl) renderChartsGallery(pageEl);
+}
+
+let currentCustomImageBase64 = "";
+
+function openPinterestModal() {
+  const modal = document.getElementById('pinterest-import-modal');
+  if (!modal) return;
+  document.getElementById('pinterest-urls-input').value = '';
+  document.getElementById('pinterest-preview-grid').innerHTML = '';
+  modal.showModal();
+}
+
+function handlePinterestUrlsInput() {
+  const raw = document.getElementById('pinterest-urls-input').value;
+  const previewGrid = document.getElementById('pinterest-preview-grid');
+
+  // Match all http/https URLs from input text
+  const urlRegex = /https?:\/\/[^\s,\n"'<>]+/gi;
+  const allUrls = [...new Set(raw.match(urlRegex) || [])];
+
+  if (!allUrls.length) {
+    previewGrid.innerHTML = `<p style="color:var(--text3);font-size:.85rem;grid-column:1/-1;">No links detected yet. Paste Pinterest pin or image links above.</p>`;
+    return;
+  }
+
+  previewGrid.innerHTML = allUrls.map((url, i) => `
+    <div class="pin-preview-item" id="pin-item-${i}">
+      <div style="position:relative;width:100%;height:120px;background:var(--surface);border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;">
+        <div class="pin-loading" style="font-size:.78rem;color:var(--text3);display:flex;align-items:center;gap:6px;">
+          <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+          Resolving link...
+        </div>
+        <img class="pin-img" src="" alt="Pinterest chart ${i+1}"
+          style="display:none;width:100%;height:100%;object-fit:cover;border-radius:8px;"
+          onerror="this.style.display='none'; if(this.parentElement.querySelector('.pin-loading')) this.parentElement.querySelector('.pin-loading').style.display='none'; this.parentElement.querySelector('.pin-err').style.display='flex';"
+          onload="this.style.display='block'; if(this.parentElement.querySelector('.pin-loading')) this.parentElement.querySelector('.pin-loading').style.display='none'; this.parentElement.querySelector('.pin-ok').style.display='flex';" />
+        <div class="pin-ok" style="display:none;position:absolute;top:4px;right:4px;background:#10b981;border-radius:50%;width:18px;height:18px;align-items:center;justify-content:center;font-size:10px;color:#fff;">✓</div>
+        <div class="pin-err" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);border-radius:8px;font-size:.7rem;color:#f87171;padding:4px;text-align:center;">Failed to resolve image</div>
+      </div>
+      <input type="text" class="form-input pin-title-input" placeholder="Chart title…" value="Pinterest Chart ${i+1}" style="margin-top:6px;font-size:.78rem;padding:4px 8px;" />
+      <input type="hidden" class="pin-url-val" value="${url.replace(/"/g,'&quot;')}" />
+    </div>
+  `).join('');
+
+  // Resolve each URL asynchronously
+  allUrls.forEach((url, i) => {
+    const itemEl = document.getElementById(`pin-item-${i}`);
+    if (!itemEl) return;
+    const imgEl = itemEl.querySelector('.pin-img');
+    const loadingEl = itemEl.querySelector('.pin-loading');
+    const errEl = itemEl.querySelector('.pin-err');
+    const titleEl = itemEl.querySelector('.pin-title-input');
+    const urlValEl = itemEl.querySelector('.pin-url-val');
+
+    // If direct image URL
+    if (url.includes('i.pinimg.com') || /\.(jpeg|jpg|png|webp|gif)(\?.*)?$/i.test(url)) {
+      imgEl.src = url;
+      return;
+    }
+
+    // Call backend API resolver for pin.it or pinterest.com/pin/... links
+    fetch('/api/pinterest-resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok && data.imageUrl) {
+          imgEl.src = data.imageUrl;
+          if (urlValEl) urlValEl.value = data.imageUrl;
+          if (data.title && titleEl && (titleEl.value.startsWith('Pinterest Chart') || !titleEl.value)) {
+            titleEl.value = data.title;
+          }
+        } else {
+          if (loadingEl) loadingEl.style.display = 'none';
+          if (errEl) {
+            errEl.innerText = data.message || 'Image not found';
+            errEl.style.display = 'flex';
+          }
+          itemEl.style.opacity = '0.4';
+        }
+      })
+      .catch(err => {
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (errEl) errEl.style.display = 'flex';
+        itemEl.style.opacity = '0.4';
+      });
+  });
+}
+
+function handlePinterestImport() {
+  const items = document.querySelectorAll('#pinterest-preview-grid .pin-preview-item');
+  if (!items.length) {
+    toast('Paste some Pinterest image URLs first', 'error');
+    return;
+  }
+
+  const existing = LS.get('tj_custom_charts', []);
+  let added = 0;
+
+  items.forEach(item => {
+    const img = item.querySelector('img');
+    const titleInput = item.querySelector('.pin-title-input');
+    const urlInput = item.querySelector('.pin-url-val');
+
+    if (!img || item.style.opacity === '0.4' || !img.src) return; // skip failed images
+
+    const url = (img.src && img.src.startsWith('http')) ? img.src : (urlInput ? urlInput.value : '');
+    if (!url) return;
+    const title = titleInput ? titleInput.value.trim() || 'Pinterest Chart' : 'Pinterest Chart';
+
+    existing.unshift({
+      id: 'pin-' + Date.now() + '-' + Math.random().toString(36).slice(2,6),
+      title,
+      category: 'Pinterest',
+      badgeClass: 'badge-pinterest',
+      winRate: '',
+      rr: '',
+      description: 'Saved from Pinterest board.',
+      rules: [],
+      image: url,
+    });
+    added++;
+  });
+
+  if (!added) {
+    toast('No valid images to import', 'error');
+    return;
+  }
+
+  saveCustomCharts(existing);
+  document.getElementById('pinterest-import-modal')?.close();
+  chartFilterCategory = 'Pinterest';
+  toast(`Imported ${added} Pinterest chart${added > 1 ? 's' : ''}!`, 'success');
+  const pageEl = document.querySelector('.page');
+  if (pageEl) renderChartsGallery(pageEl);
+}
+
+
+
+function openAddChartModal() {
+  const modal = document.getElementById('custom-chart-modal');
+  if (!modal) return;
+
+  const form = document.getElementById('custom-chart-form');
+  if (form) form.reset();
+
+  currentCustomImageBase64 = "";
+  const previewWrap = document.getElementById('cc-image-preview-wrap');
+  const promptWrap = document.getElementById('cc-upload-prompt');
+  if (previewWrap) previewWrap.style.display = 'none';
+  if (promptWrap) promptWrap.style.display = 'block';
+
+  setupChartUploadHandlers();
+  modal.showModal();
+}
+
+function setupChartUploadHandlers() {
+  const dropZone = document.getElementById('cc-drop-zone');
+  const fileInput = document.getElementById('cc-file-input');
+  const removeBtn = document.getElementById('cc-remove-img');
+  const urlInput = document.getElementById('cc-image-url');
+
+  if (!dropZone || !fileInput) return;
+
+  dropZone.onclick = (e) => {
+    if (e.target.id === 'cc-remove-img') return;
+    fileInput.click();
+  };
+
+  fileInput.onchange = () => {
+    if (fileInput.files && fileInput.files[0]) {
+      readChartFile(fileInput.files[0]);
+    }
+  };
+
+  dropZone.ondragover = (e) => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  };
+
+  dropZone.ondragleave = () => {
+    dropZone.classList.remove('dragover');
+  };
+
+  dropZone.ondrop = (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      readChartFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  if (removeBtn) {
+    removeBtn.onclick = (e) => {
+      e.stopPropagation();
+      currentCustomImageBase64 = "";
+      fileInput.value = "";
+      document.getElementById('cc-image-preview-wrap').style.display = 'none';
+      document.getElementById('cc-upload-prompt').style.display = 'block';
+    };
+  }
+
+  if (urlInput) {
+    urlInput.oninput = () => {
+      if (urlInput.value) {
+        currentCustomImageBase64 = urlInput.value;
+        const img = document.getElementById('cc-image-preview');
+        if (img) img.src = urlInput.value;
+        document.getElementById('cc-image-preview-wrap').style.display = 'block';
+        document.getElementById('cc-upload-prompt').style.display = 'none';
+      }
+    };
+  }
+}
+
+function readChartFile(file) {
+  if (!file.type.startsWith('image/')) {
+    toast('Please upload an image file (PNG, JPG, WEBP)', 'error');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    currentCustomImageBase64 = e.target.result;
+    const img = document.getElementById('cc-image-preview');
+    if (img) img.src = currentCustomImageBase64;
+    document.getElementById('cc-image-preview-wrap').style.display = 'block';
+    document.getElementById('cc-upload-prompt').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
+
+function handleCustomChartSubmit() {
+  const title = document.getElementById('cc-title')?.value?.trim();
+  if (!title) {
+    toast('Please enter a chart title', 'error');
+    return;
+  }
+
+  const category = document.getElementById('cc-category')?.value || 'Market Structure';
+  const winRate = document.getElementById('cc-winrate')?.value?.trim() || '85% Win Rate';
+  const rr = document.getElementById('cc-rr')?.value?.trim() || '1 : 3.0 RR';
+  const desc = document.getElementById('cc-desc')?.value?.trim() || 'Personal chart study setup for technical edge.';
+  const rulesRaw = document.getElementById('cc-rules')?.value?.trim() || '';
+  const urlVal = document.getElementById('cc-image-url')?.value?.trim();
+
+  const finalImg = currentCustomImageBase64 || urlVal || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><rect width="400" height="200" fill="%230f172a"/><text x="200" y="100" fill="%2338bdf8" text-anchor="middle" font-weight="bold" font-size="16">Custom Chart Study</text></svg>';
+
+  const rules = rulesRaw ? rulesRaw.split('\n').map(r => r.trim()).filter(Boolean) : [
+    'Confirm overall market trend direction.',
+    'Wait for strong volume confirmation at entry level.',
+    'Maintain disciplined risk management & position sizing.'
+  ];
+
+  const badgeClass = category === 'Reversals'
+    ? 'badge-reversal'
+    : category === 'Continuations'
+      ? 'badge-continuation'
+      : category === 'Candlesticks'
+        ? 'badge-candlestick'
+        : 'badge-structure';
+
+  const newChart = {
+    id: 'custom-' + Date.now(),
+    title,
+    category,
+    badgeClass,
+    winRate,
+    rr,
+    description: desc,
+    rules,
+    image: finalImg
+  };
+
+  const custom = LS.get('tj_custom_charts', []);
+  custom.unshift(newChart);
+  saveCustomCharts(custom);
+
+  fetch('/api/journal/custom-charts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(newChart),
+  }).catch(() => undefined);
+
+  document.getElementById('custom-chart-modal')?.close();
+  toast('Custom chart study saved successfully!', 'success');
+
+  const pageEl = document.querySelector('.page');
+  if (pageEl) renderChartsGallery(pageEl);
+}
+
+window.filterCharts = function(cat) {
+  chartFilterCategory = cat;
+  const pageEl = document.querySelector('.page');
+  if (pageEl) renderChartsGallery(pageEl);
+};
+window.openChartModal = openChartModal;
+window.openAddChartModal = openAddChartModal;
+window.openPinterestModal = openPinterestModal;
+window.handlePinterestUrlsInput = handlePinterestUrlsInput;
+window.handlePinterestImport = handlePinterestImport;
+window.deleteCustomChart = deleteCustomChart;
+window.handleCustomChartSubmit = handleCustomChartSubmit;
+
