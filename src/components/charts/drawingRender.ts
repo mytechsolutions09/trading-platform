@@ -533,54 +533,64 @@ export function renderDrawing(item: DrawingItem, rc: RenderContext) {
   } else if (type === "parallel_channel" && s1 && s2) {
     // ─── PARALLEL CHANNEL ──────────────────────────────────────────────────
     const pcColor = style.color ?? "#3B82F6";
-    let offsetY = 40;
-    if (s3) {
-      const dx = s2.x - s1.x;
-      const dy = s2.y - s1.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const nx = -dy / len;
-      const ny = dx / len;
-      offsetY = (s3.x - s1.x) * nx + (s3.y - s1.y) * ny;
+    let priceOffset = 0;
+    if (item.p3 && item.p1) {
+      const p1 = item.p1;
+      const p2 = item.p2 || item.p1;
+      const p3 = item.p3;
+      const tProgress = p2.time !== p1.time ? (p3.time - p1.time) / (p2.time - p1.time) : 0;
+      const baseLinePriceAtP3 = p1.price + (p2.price - p1.price) * tProgress;
+      priceOffset = p3.price - baseLinePriceAtP3;
+    } else {
+      priceOffset = Math.abs(item.p2 ? item.p2.price - item.p1.price : item.p1.price * 0.01) * 0.35 || item.p1.price * 0.005;
     }
-    const dx = s2.x - s1.x;
-    const dy = s2.y - s1.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const unx = -dy / len;
-    const uny = dx / len;
-    const ox = unx * offsetY;
-    const oy = uny * offsetY;
 
-    const a1 = { x: s1.x, y: s1.y };
-    const a2 = { x: s2.x, y: s2.y };
-    const b1 = { x: s1.x + ox, y: s1.y + oy };
-    const b2 = { x: s2.x + ox, y: s2.y + oy };
+    const b1 = chartPointToScreen({ time: item.p1.time, price: item.p1.price + priceOffset });
+    const b2 = item.p2 ? chartPointToScreen({ time: item.p2.time, price: item.p2.price + priceOffset }) : null;
 
-    if (isSelected) drawSelectionGlow(ctx, a1, a2, pcColor);
+    const a1 = s1;
+    const a2 = s2;
 
-    ctx.beginPath();
-    ctx.moveTo(a1.x, a1.y);
-    ctx.lineTo(a2.x, a2.y);
-    ctx.moveTo(b1.x, b1.y);
-    ctx.lineTo(b2.x, b2.y);
-    ctx.moveTo(a1.x, a1.y);
-    ctx.lineTo(b1.x, b1.y);
-    ctx.moveTo(a2.x, a2.y);
-    ctx.lineTo(b2.x, b2.y);
-    ctx.strokeStyle = pcColor;
-    applyLineStyle(ctx, style, style.lineWidth ?? 1.75);
-    ctx.stroke();
-    resetLineDash(ctx);
+    if (b1 && b2) {
+      if (isSelected) drawSelectionGlow(ctx, a1, a2, pcColor);
 
-    ctx.fillStyle = pcColor + "14";
-    ctx.beginPath();
-    ctx.moveTo(a1.x, a1.y);
-    ctx.lineTo(a2.x, a2.y);
-    ctx.lineTo(b2.x, b2.y);
-    ctx.lineTo(b1.x, b1.y);
-    ctx.closePath();
-    ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(a1.x, a1.y);
+      ctx.lineTo(a2.x, a2.y);
+      ctx.moveTo(b1.x, b1.y);
+      ctx.lineTo(b2.x, b2.y);
+      ctx.moveTo(a1.x, a1.y);
+      ctx.lineTo(b1.x, b1.y);
+      ctx.moveTo(a2.x, a2.y);
+      ctx.lineTo(b2.x, b2.y);
+      ctx.strokeStyle = pcColor;
+      applyLineStyle(ctx, style, style.lineWidth ?? 1.75);
+      ctx.stroke();
+      resetLineDash(ctx);
 
-    if (isSelected || isPreview) drawHandles(ctx, [s1, s2, ...(s3 ? [s3] : [])], pcColor, isSelected);
+      ctx.fillStyle = pcColor + "14";
+      ctx.beginPath();
+      ctx.moveTo(a1.x, a1.y);
+      ctx.lineTo(a2.x, a2.y);
+      ctx.lineTo(b2.x, b2.y);
+      ctx.lineTo(b1.x, b1.y);
+      ctx.closePath();
+      ctx.fill();
+
+      // Midline (dashed)
+      const m1 = { x: (a1.x + b1.x) / 2, y: (a1.y + b1.y) / 2 };
+      const m2 = { x: (a2.x + b2.x) / 2, y: (a2.y + b2.y) / 2 };
+      ctx.beginPath();
+      ctx.moveTo(m1.x, m1.y);
+      ctx.lineTo(m2.x, m2.y);
+      ctx.strokeStyle = pcColor + "99";
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      resetLineDash(ctx);
+
+      const p3Handle = s3 || { x: (b1.x + b2.x) / 2, y: (b1.y + b2.y) / 2 };
+      if (isSelected || isPreview) drawHandles(ctx, [s1, s2, p3Handle], pcColor, isSelected);
+    }
 
   } else if (type === "pitchfork" && s1 && s2 && s3) {
     // ─── PITCHFORK ─────────────────────────────────────────────────────────
@@ -1094,27 +1104,25 @@ export function hitTestDrawing(
   }
 
   if (type === "parallel_channel" && s1 && s2) {
-    let offsetY = 40;
-    if (s3) {
-      const dx = s2.x - s1.x;
-      const dy = s2.y - s1.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const nx = -dy / len;
-      const ny = dx / len;
-      offsetY = (s3.x - s1.x) * nx + (s3.y - s1.y) * ny;
+    let priceOffset = 0;
+    if (item.p3 && item.p1) {
+      const p1 = item.p1;
+      const p2 = item.p2 || item.p1;
+      const p3 = item.p3;
+      const tProgress = p2.time !== p1.time ? (p3.time - p1.time) / (p2.time - p1.time) : 0;
+      const baseLinePriceAtP3 = p1.price + (p2.price - p1.price) * tProgress;
+      priceOffset = p3.price - baseLinePriceAtP3;
+    } else {
+      priceOffset = Math.abs(item.p2 ? item.p2.price - item.p1.price : item.p1.price * 0.01) * 0.35 || item.p1.price * 0.005;
     }
-    const dx = s2.x - s1.x;
-    const dy = s2.y - s1.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const unx = -dy / len;
-    const uny = dx / len;
-    const ox = unx * offsetY;
-    const oy = uny * offsetY;
+
+    const b1 = chartPointToScreen({ time: item.p1.time, price: item.p1.price + priceOffset });
+    const b2 = item.p2 ? chartPointToScreen({ time: item.p2.time, price: item.p2.price + priceOffset }) : null;
+
+    if (!b1 || !b2) return false;
 
     const a1 = { x: s1.x, y: s1.y };
     const a2 = { x: s2.x, y: s2.y };
-    const b1 = { x: s1.x + ox, y: s1.y + oy };
-    const b2 = { x: s2.x + ox, y: s2.y + oy };
 
     const d1 = distanceToSegment(x, y, a1.x, a1.y, a2.x, a2.y);
     const d2 = distanceToSegment(x, y, b1.x, b1.y, b2.x, b2.y);
