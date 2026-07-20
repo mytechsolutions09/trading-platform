@@ -322,9 +322,73 @@ export function toCryptoYahooSymbol(item: SymbolInfo): string {
   return `${ticker}-USD`;
 }
 
+async function fetchBybitQuotes(items: SymbolInfo[]): Promise<Map<string, LiveQuote>> {
+  const map = new Map<string, LiveQuote>();
+  if (items.length === 0) return map;
+
+  try {
+    const [linearRes, spotRes] = await Promise.allSettled([
+      fetch("https://api.bybit.com/v5/market/tickers?category=linear"),
+      fetch("https://api.bybit.com/v5/market/tickers?category=spot"),
+    ]);
+
+    const bybitSymbolMap = new Map<string, LiveQuote>();
+
+    const parseList = (list: any[]) => {
+      if (!Array.isArray(list)) return;
+      for (const row of list) {
+        const price = parseFloat(row.lastPrice);
+        const changePct = parseFloat(row.price24hPcnt || "0") * 100;
+        const high24h = parseFloat(row.highPrice24h);
+        const low24h = parseFloat(row.lowPrice24h);
+        const volume = parseFloat(row.turnover24h || row.volume24h || "0");
+        if (!Number.isFinite(price) || price <= 0) continue;
+        bybitSymbolMap.set(row.symbol.toUpperCase(), {
+          price,
+          change24h: Number.isFinite(changePct) ? (price * changePct) / 100 : 0,
+          changePct: Number.isFinite(changePct) ? changePct : 0,
+          high24h: Number.isFinite(high24h) ? high24h : price,
+          low24h: Number.isFinite(low24h) ? low24h : price,
+          volume: formatVolume(volume),
+        });
+      }
+    };
+
+    if (linearRes.status === "fulfilled" && linearRes.value.ok) {
+      const data = await linearRes.value.json();
+      parseList(data?.result?.list);
+    }
+    if (spotRes.status === "fulfilled" && spotRes.value.ok) {
+      const data = await spotRes.value.json();
+      parseList(data?.result?.list);
+    }
+
+    for (const item of items) {
+      const pair = toBinancePair(item);
+      const rawSym = item.symbol.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const tvSym = item.tvSymbol.toUpperCase().replace(/.*:/, "").replace(/[^A-Z0-9]/g, "");
+
+      const q =
+        (pair ? bybitSymbolMap.get(pair) : null) ||
+        bybitSymbolMap.get(rawSym) ||
+        bybitSymbolMap.get(tvSym) ||
+        (pair ? bybitSymbolMap.get(`${pair}USDT`) : null) ||
+        bybitSymbolMap.get(`${rawSym}USDT`);
+
+      if (q) {
+        map.set(item.id, q);
+      }
+    }
+  } catch {
+    // non-fatal
+  }
+
+  return map;
+}
+
 /**
  * Fetch live quotes for a list of watchlist symbols.
- * Crypto → Binance (with Yahoo Finance fallback) · Stocks / FX / Indices → Yahoo Finance (proxied)
+ * Crypto → Binance & Bybit (Linear/Spot) with Yahoo Finance fallback · Stocks / FX / Indices → Yahoo Finance
  */
 export async function fetchLiveQuotes(
   items: SymbolInfo[],
@@ -349,15 +413,14 @@ export async function fetchLiveQuotes(
     fetchYahooQuotes(yahooSyms.map((y) => y.yahoo)),
   ]);
 
-  const failedBinanceItems: { id: string; yahoo: string }[] = [];
+  const unhandledCryptoItems: SymbolInfo[] = [];
 
   for (const { id, pair, item } of binancePairs) {
     const q = binanceMap.get(pair);
     if (q) {
       byId.set(id, q);
     } else {
-      const yahooTicker = toCryptoYahooSymbol(item);
-      failedBinanceItems.push({ id, yahoo: yahooTicker });
+      unhandledCryptoItems.push(item);
     }
   }
   for (const { id, yahoo } of yahooSyms) {
@@ -365,13 +428,29 @@ export async function fetchLiveQuotes(
     if (q) byId.set(id, q);
   }
 
-  if (failedBinanceItems.length > 0) {
-    const fallbackYahooMap = await fetchYahooQuotes(
-      failedBinanceItems.map((f) => f.yahoo),
-    );
-    for (const { id, yahoo } of failedBinanceItems) {
-      const q = fallbackYahooMap.get(yahoo);
-      if (q) byId.set(id, q);
+  // Fallback to Bybit linear/spot for any crypto symbols not matched on Binance
+  if (unhandledCryptoItems.length > 0) {
+    const bybitMap = await fetchBybitQuotes(unhandledCryptoItems);
+    const remainingForYahoo: { id: string; yahoo: string }[] = [];
+
+    for (const item of unhandledCryptoItems) {
+      const q = bybitMap.get(item.id);
+      if (q) {
+        byId.set(item.id, q);
+      } else {
+        const yahooTicker = toCryptoYahooSymbol(item);
+        remainingForYahoo.push({ id: item.id, yahoo: yahooTicker });
+      }
+    }
+
+    if (remainingForYahoo.length > 0) {
+      const fallbackYahooMap = await fetchYahooQuotes(
+        remainingForYahoo.map((f) => f.yahoo),
+      );
+      for (const { id, yahoo } of remainingForYahoo) {
+        const q = fallbackYahooMap.get(yahoo);
+        if (q) byId.set(id, q);
+      }
     }
   }
 

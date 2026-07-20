@@ -177,11 +177,11 @@ export function toSymbolInfo(item: ApiWatchlistItem): SymbolInfo {
     tvSymbol: item.tvSymbol ?? catalog?.tvSymbol ?? item.symbol,
     name: item.name,
     assetClass: item.assetClass,
-    price: catalog?.price ?? 100,
+    price: catalog?.price ?? 0,
     change24h: catalog?.change24h ?? 0,
     changePct: catalog?.changePct ?? 0,
     volume: catalog?.volume ?? "—",
-    high24h: catalog?.high24h ?? 100,
-    low24h: catalog?.low24h ?? 100,
+    high24h: catalog?.high24h ?? 0,
+    low24h: catalog?.low24h ?? 0,
   };
 }
