@@ -15,6 +15,18 @@ export type DrawingType =
   | "pitchfork"
   | "fibonacci"
   | "fib_extension"
+  | "fib_channel"
+  | "fib_time_zone"
+  | "fib_speed_fan"
+  | "xabcd_pattern"
+  | "cypher_pattern"
+  | "head_and_shoulders"
+  | "abcd_pattern"
+  | "triangle_pattern"
+  | "three_drives_pattern"
+  | "elliott_impulse"
+  | "elliott_correction"
+  | "elliott_triangle"
   | "rectangle"
   | "ellipse"
   | "triangle"
@@ -60,6 +72,11 @@ export const TWO_POINT_TOOLS = new Set([
   "info_line",
   "fibonacci",
   "fib_extension",
+  "fib_channel",
+  "fib_time_zone",
+  "fib_speed_fan",
+  "abcd_pattern",
+  "elliott_correction",
   "parallel_channel",
   "rectangle",
   "ellipse",
@@ -70,7 +87,17 @@ export const TWO_POINT_TOOLS = new Set([
   "shapes",
 ]);
 
-export const THREE_POINT_TOOLS = new Set(["pitchfork", "triangle"]);
+export const THREE_POINT_TOOLS = new Set([
+  "pitchfork",
+  "triangle",
+  "head_and_shoulders",
+  "xabcd_pattern",
+  "cypher_pattern",
+  "triangle_pattern",
+  "three_drives_pattern",
+  "elliott_impulse",
+  "elliott_triangle",
+]);
 
 export const ONE_POINT_TOOLS = new Set([
   "horizontal_line",

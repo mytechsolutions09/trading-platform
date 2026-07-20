@@ -1,0 +1,23 @@
+name = "apex-trade-api"
+main = "server/cf-worker.ts"
+compatibility_date = "2024-09-23"
+
+# Cloudflare D1 Database Binding
+[[d1_databases]]
+binding = "DB"
+database_name = "apex-trade-api"
+database_id = "c7aea093-c75f-4a9c-a48c-471652998cb1"
+migrations_dir = "migrations"
+
+# Cloudflare R2 Object Storage Bucket Binding
+[[r2_buckets]]
+binding = "ASSETS_BUCKET"
+bucket_name = "apex-trade-assets"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[env.production]
+name = "apex-trade-api-prod"

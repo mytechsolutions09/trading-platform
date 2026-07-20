@@ -57,4 +57,9 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    modulePreload: {
+      polyfill: true,
+    },
+  },
 });

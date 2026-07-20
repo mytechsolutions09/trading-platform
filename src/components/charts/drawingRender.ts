@@ -224,7 +224,7 @@ function drawTimeAxisMarker(
 }
 
 /** Angle badge near p2 endpoint (TV shows angle in degrees) */
-function drawAngleBadge(ctx: CanvasRenderingContext2D, s1: ScreenPt, s2: ScreenPt, color: string) {
+function drawAngleBadge(ctx: CanvasRenderingContext2D, s1: ScreenPt, s2: ScreenPt, _color: string) {
   const dx = s2.x - s1.x;
   const dy = s2.y - s1.y;
   const angleDeg = Math.abs(Math.atan2(-dy, dx) * (180 / Math.PI));
@@ -656,6 +656,110 @@ export function renderDrawing(item: DrawingItem, rc: RenderContext) {
 
     if (isSelected || isPreview) drawHandles(ctx, [s1, s2], style.color ?? "#26A69A", isSelected);
 
+  } else if (type === "fib_channel" && s1 && s2) {
+    // ─── FIB CHANNEL ───────────────────────────────────────────────────────
+    const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
+    const fibColors = ["#F44336", "#FF9800", "#EAB308", "#26A69A", "#2196F3", "#9C27B0", "#607D8B"];
+    const offsetY = s3 ? s3.y - s1.y : 40;
+    levels.forEach((lvl, idx) => {
+      const ox = s3 ? (s3.x - s1.x) * lvl : 0;
+      const oy = offsetY * lvl;
+      const a = { x: s1.x + ox, y: s1.y + oy };
+      const b = { x: s2.x + ox, y: s2.y + oy };
+      const c = fibColors[idx % fibColors.length];
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.strokeStyle = c;
+      ctx.lineWidth = isSelected ? 1.5 : 1;
+      ctx.stroke();
+    });
+    if (isSelected || isPreview) drawHandles(ctx, s3 ? [s1, s2, s3] : [s1, s2], "#06B6D4", isSelected);
+
+  } else if (type === "fib_time_zone" && s1 && s2) {
+    // ─── FIB TIME ZONE ─────────────────────────────────────────────────────
+    const fibRatios = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55];
+    const baseWidth = Math.abs(s2.x - s1.x) || 20;
+    const minX = Math.min(s1.x, s2.x);
+    const fColor = style.color ?? "#06B6D4";
+    fibRatios.forEach((r) => {
+      const x = minX + r * baseWidth;
+      if (x >= 0 && x <= width) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.strokeStyle = fColor;
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = fColor;
+        ctx.font = "10px sans-serif";
+        ctx.fillText(String(r), x + 4, 15);
+      }
+    });
+    resetLineDash(ctx);
+    if (isSelected || isPreview) drawHandles(ctx, [s1, s2], fColor, isSelected);
+
+  } else if (type === "fib_speed_fan" && s1 && s2) {
+    // ─── FIB SPEED RESISTANCE FAN ──────────────────────────────────────────
+    const fans = [0.25, 0.382, 0.5, 0.618, 0.75];
+    const fColor = style.color ?? "#F59E0B";
+    ctx.beginPath();
+    ctx.moveTo(s1.x, s1.y);
+    ctx.lineTo(s2.x, s2.y);
+    ctx.strokeStyle = fColor;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    fans.forEach((r) => {
+      const targetY = s1.y + (s2.y - s1.y) * r;
+      ctx.beginPath();
+      ctx.moveTo(s1.x, s1.y);
+      ctx.lineTo(s2.x, targetY);
+      ctx.strokeStyle = fColor;
+      ctx.setLineDash([3, 3]);
+      ctx.stroke();
+    });
+    resetLineDash(ctx);
+    if (isSelected || isPreview) drawHandles(ctx, [s1, s2], fColor, isSelected);
+
+  } else if ((type === "abcd_pattern" || type === "xabcd_pattern" || type === "cypher_pattern" || type === "head_and_shoulders" || type === "three_drives_pattern" || type.startsWith("elliott_")) && s1) {
+    // ─── PATTERNS & ELLIOTT WAVES ──────────────────────────────────────────
+    const pts = [s1];
+    if (s2) pts.push(s2);
+    if (s3) pts.push(s3);
+    const pColor = style.color ?? "#3B82F6";
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y);
+    }
+    ctx.strokeStyle = pColor;
+    applyLineStyle(ctx, style, style.lineWidth ?? 1.75);
+    ctx.stroke();
+    resetLineDash(ctx);
+
+    const labelsMap: Record<string, string[]> = {
+      abcd_pattern: ["A", "B", "C", "D"],
+      xabcd_pattern: ["X", "A", "B", "C", "D"],
+      cypher_pattern: ["C1", "C2", "C3"],
+      head_and_shoulders: ["LS", "HEAD", "RS"],
+      three_drives_pattern: ["D1", "D2", "D3"],
+      elliott_impulse: ["1", "2", "3", "4", "5"],
+      elliott_correction: ["A", "B", "C"],
+      elliott_triangle: ["A", "B", "C", "D", "E"],
+    };
+    const labels = labelsMap[type] || [];
+    pts.forEach((pt, i) => {
+      if (labels[i]) {
+        ctx.font = "bold 11px sans-serif";
+        ctx.fillStyle = pColor;
+        ctx.fillText(labels[i], pt.x + 6, pt.y - 6);
+      }
+    });
+
+    if (isSelected || isPreview) drawHandles(ctx, pts, pColor, isSelected);
+
   } else if ((type === "rectangle" || type === "shapes") && s1 && s2) {
     // ─── RECTANGLE ─────────────────────────────────────────────────────────
     const rColor = style.color ?? "#3B82F6";
@@ -979,8 +1083,59 @@ export function hitTestDrawing(
     return Math.min(d1, d2, d3) <= 12;
   }
 
+  if ((type === "fib_channel" || type === "fib_time_zone" || type === "fib_speed_fan" || type === "abcd_pattern" || type === "xabcd_pattern" || type === "cypher_pattern" || type === "head_and_shoulders" || type === "triangle_pattern" || type === "three_drives_pattern" || type.startsWith("elliott_")) && s1) {
+    const pts = [s1];
+    if (s2) pts.push(s2);
+    if (s3) pts.push(s3);
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (distanceToSegment(x, y, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) <= 14) return true;
+    }
+    return Math.hypot(x - s1.x, y - s1.y) <= 14;
+  }
+
   if (type === "parallel_channel" && s1 && s2) {
-    return distanceToSegment(x, y, s1.x, s1.y, s2.x, s2.y) <= 14;
+    let offsetY = 40;
+    if (s3) {
+      const dx = s2.x - s1.x;
+      const dy = s2.y - s1.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len;
+      const ny = dx / len;
+      offsetY = (s3.x - s1.x) * nx + (s3.y - s1.y) * ny;
+    }
+    const dx = s2.x - s1.x;
+    const dy = s2.y - s1.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const unx = -dy / len;
+    const uny = dx / len;
+    const ox = unx * offsetY;
+    const oy = uny * offsetY;
+
+    const a1 = { x: s1.x, y: s1.y };
+    const a2 = { x: s2.x, y: s2.y };
+    const b1 = { x: s1.x + ox, y: s1.y + oy };
+    const b2 = { x: s2.x + ox, y: s2.y + oy };
+
+    const d1 = distanceToSegment(x, y, a1.x, a1.y, a2.x, a2.y);
+    const d2 = distanceToSegment(x, y, b1.x, b1.y, b2.x, b2.y);
+    const d3 = distanceToSegment(x, y, a1.x, a1.y, b1.x, b1.y);
+    const d4 = distanceToSegment(x, y, a2.x, a2.y, b2.x, b2.y);
+    const m1 = { x: (a1.x + b1.x) / 2, y: (a1.y + b1.y) / 2 };
+    const m2 = { x: (a2.x + b2.x) / 2, y: (a2.y + b2.y) / 2 };
+    const dm = distanceToSegment(x, y, m1.x, m1.y, m2.x, m2.y);
+
+    if (Math.min(d1, d2, d3, d4, dm) <= 14) return true;
+
+    // Check inside polygon (a1, a2, b2, b1)
+    const poly = [a1, a2, b2, b1];
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i].x, yi = poly[i].y;
+      const xj = poly[j].x, yj = poly[j].y;
+      const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
   }
 
   if (type === "pitchfork" && s1 && s2 && s3) {
@@ -1154,7 +1309,6 @@ export function renderPaneSeparators(
   ctx.stroke();
 
   const axisBg = isDark ? "rgba(15, 23, 42, 0.45)" : "rgba(248, 250, 252, 0.6)";
-  const axisTagBg = isDark ? "rgba(30, 41, 59, 0.9)" : "rgba(226, 232, 240, 0.95)";
 
   // 2. MACD Right Scale Box & Labels
   if (hasMACD) {

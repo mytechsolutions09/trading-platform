@@ -45,6 +45,8 @@ interface TrendLineSettingsProps {
   onClone: () => void;
   onDelete: () => void;
   onClose: () => void;
+  /** Custom title for settings header */
+  title?: string;
   /** If true, shows only the context-menu actions (right-click mode) */
   contextMenuOnly?: boolean;
 }
@@ -56,6 +58,7 @@ export function TrendLineSettings({
   onClone,
   onDelete,
   onClose,
+  title,
   contextMenuOnly = false,
 }: TrendLineSettingsProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -145,7 +148,7 @@ export function TrendLineSettings({
     >
       {/* Header */}
       <div className="tl-settings-header">
-        <span>Trend Line</span>
+        <span>{title || "Trend Line"}</span>
         <button className="tl-settings-close" onClick={onClose} title="Close">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <line x1="18" y1="6" x2="6" y2="18" />

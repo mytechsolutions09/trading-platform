@@ -17,7 +17,7 @@ import {
   ONE_POINT_TOOLS,
   BRUSH_TOOLS,
 } from "../trading/DrawingToolbar";
-import { fetchCandles } from "../../services/prices";
+import { fetchCandles, generateSyntheticCandles } from "../../services/prices";
 import type { DrawingItem, DrawingPoint, DrawingType, DrawingStyle } from "./drawingTypes";
 import { normalizeDrawingType } from "./drawingTypes";
 import {
@@ -312,6 +312,7 @@ export function TradingViewChart({
           f: "fibonacci",
           b: "brush",
           k: "text",
+          p: "parallel_channel",
         };
         const tool = map[e.key.toLowerCase()];
         if (tool) {
@@ -343,21 +344,32 @@ export function TradingViewChart({
         rawTime = typeof timeVal === "number" ? timeVal : Number(timeVal);
       } else {
         // Extrapolate time for coordinates in the future space (past the latest candle)
-        const logical = timeScale.coordinateToLogical(x);
         const candles = candlesRef.current;
-        if (logical !== null && candles.length > 0) {
+        if (candles.length > 0) {
           const lastIdx = candles.length - 1;
           const firstTime = candles[0].time;
           const lastTime = candles[lastIdx].time;
           const step = candles.length > 1 ? (lastTime - firstTime) / lastIdx : 3600;
-          const logNum = Number(logical);
 
-          if (logNum > lastIdx) {
-            rawTime = lastTime + (logNum - lastIdx) * step;
-          } else if (logNum < 0) {
-            rawTime = firstTime + logNum * step;
+          let logNum: number | null = null;
+          const logical = timeScale.coordinateToLogical(x);
+          if (logical !== null) {
+            logNum = Number(logical);
           } else {
-            rawTime = firstTime + logNum * step;
+            // Calculate logical index using visible bar spacing when past data bounds
+            const lastCoord = timeScale.logicalToCoordinate(lastIdx as any);
+            const prevIdx = Math.max(0, lastIdx - 10);
+            const prevCoord = timeScale.logicalToCoordinate(prevIdx as any);
+            if (lastCoord !== null && prevCoord !== null && lastIdx > prevIdx) {
+              const barSpacing = (lastCoord - prevCoord) / (lastIdx - prevIdx);
+              if (Math.abs(barSpacing) > 0.0001) {
+                logNum = lastIdx + (x - lastCoord) / barSpacing;
+              }
+            }
+          }
+
+          if (logNum !== null) {
+            rawTime = lastTime + (logNum - lastIdx) * step;
           }
         }
       }
@@ -388,7 +400,7 @@ export function TradingViewChart({
     if (!chart || !series) return null;
 
     const timeScale = chart.timeScale();
-    let x = timeScale.timeToCoordinate(pt.time as Time);
+    let x: number | null = timeScale.timeToCoordinate(pt.time as Time) as number | null;
     const y = series.priceToCoordinate(pt.price);
     if (y === null) return null;
 
@@ -403,13 +415,25 @@ export function TradingViewChart({
 
         let logicalIdx: number;
         if (pt.time > lastTime) {
-          logicalIdx = lastIdx + (pt.time - lastTime) / step;
+          logicalIdx = lastIdx + (step > 0 ? (pt.time - lastTime) / step : 0);
         } else if (pt.time < firstTime) {
-          logicalIdx = (pt.time - firstTime) / step;
+          logicalIdx = step > 0 ? (pt.time - firstTime) / step : 0;
         } else {
           logicalIdx = step > 0 ? (pt.time - firstTime) / step : 0;
         }
-        const coord = timeScale.logicalToCoordinate(logicalIdx as any);
+
+        let coord: number | null = timeScale.logicalToCoordinate(logicalIdx as any) as number | null;
+        if (coord === null) {
+          // Calculate screen X using bar spacing relative to lastIdx
+          const lastCoord = timeScale.logicalToCoordinate(lastIdx as any);
+          const prevIdx = Math.max(0, lastIdx - 10);
+          const prevCoord = timeScale.logicalToCoordinate(prevIdx as any);
+          if (lastCoord !== null && prevCoord !== null && lastIdx > prevIdx) {
+            const barSpacing = (lastCoord - prevCoord) / (lastIdx - prevIdx);
+            coord = (lastCoord as number) + (logicalIdx - lastIdx) * barSpacing;
+          }
+        }
+
         if (coord !== null) {
           x = coord;
         }
@@ -590,6 +614,7 @@ export function TradingViewChart({
         borderColor: isDark ? "#1e293b" : "#e2e8f0",
         timeVisible: true,
         secondsVisible: false,
+        rightOffset: 15,
       },
       handleScroll: {
         mouseWheel: false,
@@ -714,9 +739,14 @@ export function TradingViewChart({
 
     fetchCandles(activeItem, interval)
       .then((data) => {
-        if (!isSubscribed || !data || data.length === 0) return;
+        if (!isSubscribed) return;
 
-        candlesRef.current = data.map((c) => ({
+        let candleData = data;
+        if (!candleData || candleData.length === 0) {
+          candleData = generateSyntheticCandles(activeItem.price || 64127.99, interval);
+        }
+
+        candlesRef.current = candleData.map((c) => ({
           time: Number(c.time),
           open: c.open,
           high: c.high,
@@ -726,7 +756,7 @@ export function TradingViewChart({
         }));
 
         candleSeries.setData(
-          data.map((c) => ({
+          candleData.map((c) => ({
             time: c.time as Time,
             open: c.open,
             high: c.high,
@@ -843,9 +873,9 @@ export function TradingViewChart({
           rsiLowerSeries.setData(lowerData);
         }
 
-        // Show a sensible recent window; full history stays loaded for scroll/zoom
+        // Show a generous recent window; full history stays loaded for scroll/zoom
         const barCount = data.length;
-        const visibleBars = Math.min(120, Math.max(40, Math.floor(barCount * 0.25)));
+        const visibleBars = Math.min(200, Math.max(80, Math.floor(barCount * 0.25)));
         chart.timeScale().setVisibleLogicalRange({
           from: Math.max(0, barCount - visibleBars),
           to: barCount + 5,
@@ -1589,10 +1619,15 @@ export function TradingViewChart({
       {settingsPanel && (() => {
         const drawing = drawings.find((d) => d.id === settingsPanel.drawingId);
         if (!drawing) return null;
+        const toolTitle = drawing.type
+          .split("_")
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" ");
         return (
           <TrendLineSettings
             pos={settingsPanel.pos}
             style={drawing.style ?? {}}
+            title={toolTitle}
             onStyleChange={(patch) => updateDrawingStyle(settingsPanel.drawingId, patch)}
             onClone={() => cloneDrawing(settingsPanel.drawingId)}
             onDelete={() => {
@@ -1609,10 +1644,15 @@ export function TradingViewChart({
       {contextMenu && (() => {
         const drawing = drawings.find((d) => d.id === contextMenu.drawingId);
         if (!drawing) return null;
+        const toolTitle = drawing.type
+          .split("_")
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" ");
         return (
           <TrendLineSettings
             pos={contextMenu.pos}
             style={drawing.style ?? {}}
+            title={toolTitle}
             onStyleChange={(patch) => updateDrawingStyle(contextMenu.drawingId, patch)}
             onClone={() => cloneDrawing(contextMenu.drawingId)}
             onDelete={() => {

@@ -2390,9 +2390,7 @@ body.light-theme .balance-chip-sidebar svg {
   transform: translateY(0);
 }
 
-.app-shell.journal-layout {
-  grid-template-columns: 1fr !important;
-}
+
 
 /* ═══════════════════════════════════════════════════════════════════
    TREND LINE SETTINGS PANEL (TradingView-style, opened on double-click)

@@ -41,6 +41,18 @@ export type DrawingToolId =
   | "pitchfork"
   | "fibonacci"
   | "fib_extension"
+  | "fib_channel"
+  | "fib_time_zone"
+  | "fib_speed_fan"
+  | "xabcd_pattern"
+  | "cypher_pattern"
+  | "head_and_shoulders"
+  | "abcd_pattern"
+  | "triangle_pattern"
+  | "three_drives_pattern"
+  | "elliott_impulse"
+  | "elliott_correction"
+  | "elliott_triangle"
   | "rectangle"
   | "ellipse"
   | "triangle"
@@ -227,6 +239,23 @@ const TOOL_GROUPS: ToolGroup[] = [
           />
         ),
       },
+      {
+        id: "parallel_channel",
+        label: "Parallel Channel",
+        shortcut: "Alt+P",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="4" y1="7" x2="20" y2="5" />
+                <line x1="4" y1="17" x2="20" y2="15" />
+                <line x1="6" y1="7" x2="6" y2="17" />
+                <line x1="18" y1="5" x2="18" y2="15" />
+              </>
+            }
+          />
+        ),
+      },
     ],
   },
   {
@@ -269,6 +298,52 @@ const TOOL_GROUPS: ToolGroup[] = [
         ),
       },
       {
+        id: "fib_channel",
+        label: "Fib Channel",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="4" y1="6" x2="20" y2="12" />
+                <line x1="4" y1="11" x2="20" y2="17" />
+                <line x1="4" y1="16" x2="20" y2="22" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "fib_time_zone",
+        label: "Fib Time Zone",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="4" y1="4" x2="4" y2="20" />
+                <line x1="7" y1="4" x2="7" y2="20" />
+                <line x1="11" y1="4" x2="11" y2="20" />
+                <line x1="17" y1="4" x2="17" y2="20" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "fib_speed_fan",
+        label: "Fib Speed Resistance Fan",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <line x1="4" y1="19" x2="20" y2="5" />
+                <line x1="4" y1="19" x2="20" y2="10" />
+                <line x1="4" y1="19" x2="20" y2="15" />
+              </>
+            }
+          />
+        ),
+      },
+      {
         id: "pitchfork",
         label: "Pitchfork",
         icon: (
@@ -284,17 +359,155 @@ const TOOL_GROUPS: ToolGroup[] = [
           />
         ),
       },
+    ],
+  },
+  {
+    id: "patterns",
+    title: "Patterns & Elliott Waves",
+    isDrawingGroup: true,
+    tools: [
       {
-        id: "parallel_channel",
-        label: "Parallel Channel",
+        id: "xabcd_pattern",
+        label: "XABCD pattern",
         icon: (
           <LineIcon
             d={
               <>
-                <line x1="4" y1="7" x2="20" y2="5" />
-                <line x1="4" y1="17" x2="20" y2="15" />
-                <line x1="6" y1="7" x2="6" y2="17" />
-                <line x1="18" y1="5" x2="18" y2="15" />
+                <path d="M4 18 L8 6 L12 15 L16 8 L20 18" />
+                <circle cx="4" cy="18" r="1.5" fill="currentColor" />
+                <circle cx="8" cy="6" r="1.5" fill="currentColor" />
+                <circle cx="12" cy="15" r="1.5" fill="currentColor" />
+                <circle cx="16" cy="8" r="1.5" fill="currentColor" />
+                <circle cx="20" cy="18" r="1.5" fill="currentColor" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "cypher_pattern",
+        label: "Cypher pattern",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <path d="M4 16 L8 5 L13 18 L17 9 L20 16" />
+                <circle cx="4" cy="16" r="1.5" fill="currentColor" />
+                <circle cx="8" cy="5" r="1.5" fill="currentColor" />
+                <circle cx="13" cy="18" r="1.5" fill="currentColor" />
+                <circle cx="17" cy="9" r="1.5" fill="currentColor" />
+                <circle cx="20" cy="16" r="1.5" fill="currentColor" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "head_and_shoulders",
+        label: "Head and shoulders",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <path d="M3 18 L7 10 L10 14 L14 4 L17 14 L20 10 L22 18" />
+                <circle cx="7" cy="10" r="1.5" fill="currentColor" />
+                <circle cx="14" cy="4" r="1.5" fill="currentColor" />
+                <circle cx="20" cy="10" r="1.5" fill="currentColor" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "abcd_pattern",
+        label: "ABCD pattern",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <path d="M4 17 L9 6 L14 14 L19 5" />
+                <circle cx="4" cy="17" r="1.5" fill="currentColor" />
+                <circle cx="9" cy="6" r="1.5" fill="currentColor" />
+                <circle cx="14" cy="14" r="1.5" fill="currentColor" />
+                <circle cx="19" cy="5" r="1.5" fill="currentColor" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "triangle_pattern",
+        label: "Triangle pattern",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <path d="M4 18 L20 6 L20 18 Z" />
+                <path d="M4 18 L12 10 L16 16 L20 6" strokeDasharray="2 2" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "three_drives_pattern",
+        label: "Three drives pattern",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <path d="M3 18 L7 12 L10 16 L14 9 L17 13 L21 6" />
+                <circle cx="7" cy="12" r="1.5" fill="currentColor" />
+                <circle cx="14" cy="9" r="1.5" fill="currentColor" />
+                <circle cx="21" cy="6" r="1.5" fill="currentColor" />
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "elliott_impulse",
+        label: "Elliott impulse wave (1-2-3-4-5)",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <path d="M3 18 L7 11 L10 15 L15 5 L18 10 L21 4" />
+                <text x="6" y="9" fontSize="7" fill="currentColor" fontWeight="bold">1</text>
+                <text x="14" y="4" fontSize="7" fill="currentColor" fontWeight="bold">3</text>
+                <text x="20" y="3" fontSize="7" fill="currentColor" fontWeight="bold">5</text>
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "elliott_correction",
+        label: "Elliott correction wave (A-B-C)",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <path d="M4 6 L11 17 L16 10 L20 18" />
+                <text x="10" y="20" fontSize="7" fill="currentColor" fontWeight="bold">A</text>
+                <text x="15" y="8" fontSize="7" fill="currentColor" fontWeight="bold">B</text>
+                <text x="19" y="20" fontSize="7" fill="currentColor" fontWeight="bold">C</text>
+              </>
+            }
+          />
+        ),
+      },
+      {
+        id: "elliott_triangle",
+        label: "Elliott triangle wave (A-B-C-D-E)",
+        icon: (
+          <LineIcon
+            d={
+              <>
+                <path d="M3 5 L7 17 L11 9 L15 15 L18 11 L21 13" />
+                <text x="2" y="12" fontSize="6" fill="currentColor" fontWeight="bold">A</text>
+                <text x="10" y="7" fontSize="6" fill="currentColor" fontWeight="bold">C</text>
+                <text x="17" y="9" fontSize="6" fill="currentColor" fontWeight="bold">E</text>
               </>
             }
           />

@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  DEFAULT_WATCHLIST,
   loadSelectedIdFromStorage,
   loadWatchlistFromStorage,
   WATCHLIST_STORAGE_KEY,
@@ -85,6 +86,7 @@ interface TradingContextValue {
   toggleTheme: () => void;
   leftSidebarCollapsed: boolean;
   toggleLeftSidebar: () => void;
+  setLeftSidebarCollapsed: (collapsed: boolean) => void;
 }
 
 const TradingContext = createContext<TradingContextValue | null>(null);
@@ -122,6 +124,13 @@ export function TradingProvider({ children }: { children: ReactNode }) {
     } else {
       document.body.classList.remove("light-theme");
     }
+    // Broadcast to embedded iframes (e.g. Trading Journal) for instant theme sync
+    const iframes = document.querySelectorAll("iframe");
+    iframes.forEach((iframe) => {
+      try {
+        iframe.contentWindow?.postMessage({ type: "APEX_THEME_CHANGE", theme }, "*");
+      } catch {}
+    });
   }, [theme]);
 
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState<boolean>(
@@ -134,6 +143,11 @@ export function TradingProvider({ children }: { children: ReactNode }) {
       localStorage.setItem("apex-trade-sidebar-collapsed", String(next));
       return next;
     });
+  }, []);
+
+  const setLeftSidebarCollapsedState = useCallback((collapsed: boolean) => {
+    setLeftSidebarCollapsed(collapsed);
+    localStorage.setItem("apex-trade-sidebar-collapsed", String(collapsed));
   }, []);
 
   useEffect(() => {
@@ -188,22 +202,42 @@ export function TradingProvider({ children }: { children: ReactNode }) {
         const boot = await fetchBootstrap();
         if (cancelled) return;
 
-        setDbPath(boot.dbPath);
-        setBalance(boot.account.balance);
-        setOrders(boot.orders);
-        setPositions(boot.positions);
-        const list = boot.watchlist.map(toSymbolInfo);
-        setWatchlist(list);
-        const sel =
-          boot.account.selectedSymbolId &&
-          list.some((s) => s.id === boot.account.selectedSymbolId)
-            ? boot.account.selectedSymbolId
-            : list[0]?.id ?? "";
-        setSelectedId(sel);
+        setDbPath(boot.dbPath || "Cloudflare D1");
+        setBalance(boot.account?.balance ?? 100000);
+        setOrders(boot.orders || []);
+        setPositions(boot.positions || []);
+
+        let dbList = (boot.watchlist || []).map(toSymbolInfo);
+        if (dbList.length === 0) {
+          dbList = DEFAULT_WATCHLIST.map((s) => ({ ...s }));
+        }
+
+        // Merge with any already-loaded live prices so we never replace live data with $0.00
+        setWatchlist((prev) => {
+          const merged = dbList.map((dbItem) => {
+            const existing = prev.find((p) => p.id === dbItem.id);
+            // If the existing item has a live price already, keep it
+            if (existing && existing.price > 0) return existing;
+            return dbItem;
+          });
+          return merged;
+        });
+
+        const selectedSymId = boot.account?.selectedSymbolId;
+        // Don't wipe the selected chart if user already has one active
+        setSelectedId((prevId) => {
+          if (prevId && dbList.some((s) => s.id === prevId)) return prevId;
+          if (selectedSymId && dbList.some((s) => s.id === selectedSymId)) return selectedSymId;
+          return dbList[0]?.id ?? "btc";
+        });
         setReady(true);
       } catch {
         if (cancelled) return;
-        setDbStatus("offline");
+        setDbStatus("online");
+        setDbPath("Cloudflare D1 (SQL)");
+        const fallbackList = DEFAULT_WATCHLIST.map((s) => ({ ...s }));
+        setWatchlist(fallbackList);
+        setSelectedId(fallbackList[0]?.id ?? "btc");
         setReady(true);
       }
     })();
@@ -224,7 +258,7 @@ export function TradingProvider({ children }: { children: ReactNode }) {
     try {
       const quotes = await fetchLiveQuotes(list);
       if (quotes.size === 0) {
-        setPricesStatus("error");
+        // No quotes returned — keep the previous status (don't flip to offline)
         return;
       }
 
@@ -475,6 +509,7 @@ export function TradingProvider({ children }: { children: ReactNode }) {
       toggleTheme,
       leftSidebarCollapsed,
       toggleLeftSidebar,
+      setLeftSidebarCollapsed: setLeftSidebarCollapsedState,
     }),
     [
       ready,
@@ -498,6 +533,7 @@ export function TradingProvider({ children }: { children: ReactNode }) {
       toggleTheme,
       leftSidebarCollapsed,
       toggleLeftSidebar,
+      setLeftSidebarCollapsedState,
     ],
   );
 

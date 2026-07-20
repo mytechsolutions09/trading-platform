@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
   CandlestickChart,
@@ -10,7 +10,7 @@ import {
   Sun,
   Moon,
   Settings,
-  Wallet,
+  BookOpen,
   PanelLeftOpen,
   PanelLeftClose,
 } from "lucide-react";
@@ -20,6 +20,7 @@ const links = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/charts", label: "Charts", icon: CandlestickChart },
   { to: "/trade", label: "Trade", icon: ArrowLeftRight },
+  { to: "/journal", label: "Trading Journal", icon: BookOpen },
   { to: "/portfolio", label: "Portfolio", icon: Briefcase },
   { to: "/markets", label: "Markets", icon: Globe2 },
   { to: "/calendar", label: "Calendar", icon: CalendarDays },
@@ -32,12 +33,9 @@ export function Sidebar() {
     dbPath,
     theme,
     toggleTheme,
-    balance,
     leftSidebarCollapsed,
     toggleLeftSidebar,
   } = useTrading();
-  const location = useLocation();
-  const isDashboard = location.pathname === "/";
 
   const dbLabel =
     dbStatus === "online"
@@ -59,24 +57,6 @@ export function Sidebar() {
           <div className="brand-tag">Paper · Live charts</div>
         </div>
       </div>
-
-      {isDashboard && (
-        <div className="sidebar-balance">
-          <div className="balance-chip-sidebar">
-            <Wallet size={15} />
-            <div>
-              <span className="chip-label">Paper balance</span>
-              <span className="chip-value mono">
-                $
-                {balance.toLocaleString("en-US", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
 
       <nav className="nav">
         {links.map(({ to, label, icon: Icon, end }) => (

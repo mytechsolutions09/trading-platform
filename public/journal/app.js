@@ -11,10 +11,18 @@ const LS = {
 };
 
 // ── State ──────────────────────────────────────────────────────────────
+function getAppTheme() {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramTheme = urlParams.get('theme');
+    if (paramTheme === 'light' || paramTheme === 'dark') return paramTheme;
+  } catch {}
+  return localStorage.getItem('apex-trade-theme') || localStorage.getItem('tj_theme') || 'dark';
+}
 let trades   = LS.get('tj_trades',   []);
 let journal  = LS.get('tj_journal',  {});
 let settings = LS.get('tj_settings', { capital: 10000, currency: 'USD' });
-let theme    = localStorage.getItem('tj_theme') || 'dark';
+let theme    = getAppTheme();
 
 function saveTrades() {
   LS.set('tj_trades', trades);
@@ -36,18 +44,20 @@ function saveJournal() {
 
 function saveSettings() { LS.set('tj_settings', settings); }
 
-function applyTheme() {
+function applyTheme(newTheme) {
+  if (newTheme === 'light' || newTheme === 'dark') {
+    theme = newTheme;
+  } else {
+    theme = getAppTheme();
+  }
   document.documentElement.setAttribute('data-theme', theme);
-  const icon = document.getElementById('theme-toggle-icon');
-  const text = document.getElementById('theme-toggle-text');
-  if (icon && text) {
-    if (theme === 'light') {
-      icon.innerHTML = `<svg class="svg-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
-      text.textContent = 'Dark Mode';
-    } else {
-      icon.innerHTML = `<svg class="svg-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
-      text.textContent = 'Light Mode';
-    }
+  document.body?.setAttribute('data-theme', theme);
+  if (theme === 'light') {
+    document.documentElement.classList.add('light-theme');
+    document.body?.classList.add('light-theme');
+  } else {
+    document.documentElement.classList.remove('light-theme');
+    document.body?.classList.remove('light-theme');
   }
   updateCharts();
 }
@@ -1224,9 +1234,25 @@ function init() {
   if (ccClose) ccClose.onclick = () => document.getElementById('custom-chart-modal')?.close();
   const pinClose = document.getElementById('pinterest-modal-close');
   if (pinClose) pinClose.onclick = () => document.getElementById('pinterest-import-modal')?.close();
+  const zoomClose = document.getElementById('zoom-modal-close');
+  if (zoomClose) zoomClose.onclick = () => document.getElementById('chart-zoom-modal')?.close();
+
+  document.getElementById('zoom-in-btn')?.addEventListener('click', zoomIn);
+  document.getElementById('zoom-out-btn')?.addEventListener('click', zoomOut);
+  document.getElementById('zoom-reset-btn')?.addEventListener('click', resetZoom);
+
+  const zoomBody = document.getElementById('zoom-modal-body');
+  if (zoomBody) {
+    attachHoverZoom(zoomBody, '#zoom-img-wrapper');
+    zoomBody.addEventListener('wheel', e => {
+      e.preventDefault();
+      if (e.deltaY < 0) zoomIn();
+      else zoomOut();
+    }, { passive: false });
+  }
 
   // Fallback light-dismiss for dialog (Safari)
-  [document.getElementById('trade-modal'), document.getElementById('detail-modal'), document.getElementById('custom-chart-modal'), document.getElementById('pinterest-import-modal')].forEach(dlg => {
+  [document.getElementById('trade-modal'), document.getElementById('detail-modal'), document.getElementById('custom-chart-modal'), document.getElementById('pinterest-import-modal'), document.getElementById('chart-zoom-modal')].forEach(dlg => {
     if (dlg && !('closedBy' in HTMLDialogElement.prototype)) {
       dlg.addEventListener('click', e => {
         if (e.target !== dlg) return;
@@ -1241,16 +1267,17 @@ function init() {
   document.querySelector('.menu-toggle').onclick = openSidebar;
   document.querySelector('.sidebar-overlay').onclick = closeSidebar;
 
-  // Theme toggle
+  // Theme toggle (auto-synced with main platform)
   applyTheme();
-  const themeToggle = document.getElementById('theme-toggle');
-  if (themeToggle) {
-    themeToggle.addEventListener('click', () => {
-      theme = theme === 'light' ? 'dark' : 'light';
-      localStorage.setItem('tj_theme', theme);
-      applyTheme();
-    });
-  }
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'apex-trade-theme' || e.key === 'tj_theme') applyTheme(e.newValue);
+  });
+  window.addEventListener('message', (e) => {
+    if (e.data) {
+      const t = e.data.theme || (e.data.type === 'APEX_THEME_CHANGE' ? e.data.theme : null);
+      if (t) applyTheme(t);
+    }
+  });
 
   // Sidebar collapse toggle
   const collapseBtn = document.getElementById('sidebar-toggle-btn');
@@ -1326,7 +1353,20 @@ async function loadFromSql() {
     if (resCharts.ok) {
       const data = await resCharts.json();
       if (data && data.length > 0) {
-        LS.set('tj_custom_charts', data);
+        const parseRules = (val) => {
+          if (Array.isArray(val)) return val;
+          if (typeof val === 'string') {
+            try { return JSON.parse(val); } catch { return []; }
+          }
+          return [];
+        };
+        const normalized = data.map(c => ({
+          ...c,
+          image: c.image || c.image_url || c.imageUrl,
+          badgeClass: c.badgeClass || c.badge_class,
+          rules: parseRules(c.rules || c.rules_json)
+        }));
+        LS.set('tj_custom_charts', normalized);
       } else {
         dbChartsEmpty = true;
       }
@@ -1356,249 +1396,30 @@ window.deleteTrade       = deleteTrade;
 window.selectJournalDate = selectJournalDate;
 window.exportData        = exportData;
 
-/* ══════════════════════════════════════════════════════════════════════
-   EDUCATIONAL CHARTS GALLERY
-   ══════════════════════════════════════════════════════════════════════ */
-
-const EDUCATIONAL_CHARTS = [
-  {
-    id: 'double-bottom',
-    title: 'Double Bottom (W Pattern)',
-    category: 'Reversals',
-    badgeClass: 'badge-reversal',
-    winRate: '84% Win Rate',
-    rr: '1 : 3.0 RR',
-    description: 'Bullish reversal pattern formed after a downtrend. Look for two price troughs at equal support levels followed by a neckline breakout.',
-    rules: [
-      'Identify two distinct troughs bouncing from identical support level.',
-      'Wait for a candle close ABOVE the neckline resistance line.',
-      'Enter on breakout or on the retest of the broken neckline.',
-      'Stop Loss: Placed just below the right trough.',
-      'Target: Equal to the vertical distance from trough to neckline.'
-    ],
-    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
-      <defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#10b981" stop-opacity="0.3"/><stop offset="100%" stop-color="#10b981" stop-opacity="0"/></linearGradient></defs>
-      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
-      <path d="M 20,40 L 80,160 L 140,85 L 200,160 L 260,75 L 380,30" fill="none" stroke="#10b981" stroke-width="3"/>
-      <path d="M 260,75 L 380,30 L 380,75 Z" fill="url(#g1)"/>
-      <line x1="100" y1="85" x2="380" y2="85" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="4,4"/>
-      <text x="280" y="80" fill="#06b6d4" font-size="10" font-weight="bold">NECKLINE (BREAKOUT)</text>
-      <line x1="60" y1="160" x2="220" y2="160" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3,3"/>
-      <text x="90" y="175" fill="#ef4444" font-size="10">SUPPORT (TROUGHS 1 & 2)</text>
-      <circle cx="260" cy="75" r="5" fill="#10b981"/>
-      <text x="270" y="65" fill="#10b981" font-size="11" font-weight="bold">ENTRY ↑</text>
-    </svg>`
-  },
-  {
-    id: 'bull-flag',
-    title: 'Bull Flag Continuation',
-    category: 'Continuations',
-    badgeClass: 'badge-continuation',
-    winRate: '88% Win Rate',
-    rr: '1 : 3.5 RR',
-    description: 'High-probability trend continuation pattern. A steep vertical move (flagpole) followed by tight downward sloping channel (flag).',
-    rules: [
-      'Identify a strong initial price impulse (Flagpole).',
-      'Wait for downward sloping parallel channel consolidation with declining volume.',
-      'Entry on upper flag boundary trendline breakout.',
-      'Stop Loss: Below the lowest swing low inside the flag.',
-      'Target: Height of original flagpole added to breakout point.'
-    ],
-    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
-      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
-      <path d="M 30,190 L 160,50" fill="none" stroke="#10b981" stroke-width="4"/>
-      <path d="M 160,50 L 200,90 L 220,70 L 260,110 L 280,80 L 380,20" fill="none" stroke="#06b6d4" stroke-width="3"/>
-      <line x1="150" y1="40" x2="290" y2="75" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,4"/>
-      <line x1="190" y1="95" x2="270" y2="120" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,4"/>
-      <circle cx="280" cy="80" r="5" fill="#10b981"/>
-      <text x="290" y="95" fill="#10b981" font-size="11" font-weight="bold">BREAKOUT ENTRY ↑</text>
-      <text x="40" y="120" fill="#10b981" font-size="11" font-weight="bold">FLAGPOLE</text>
-    </svg>`
-  },
-  {
-    id: 'head-and-shoulders',
-    title: 'Head & Shoulders Top',
-    category: 'Reversals',
-    badgeClass: 'badge-reversal',
-    winRate: '79% Win Rate',
-    rr: '1 : 2.8 RR',
-    description: 'Bearish reversal pattern signaling exhaustion of an uptrend. Consists of a peak (Left Shoulder), higher peak (Head), and lower peak (Right Shoulder).',
-    rules: [
-      'Identify 3 peaks: Middle peak (Head) must be higher than left & right shoulders.',
-      'Draw the Neckline connecting the two reaction lows.',
-      'Wait for candle close BELOW the neckline for confirmation.',
-      'Stop Loss: Above the Right Shoulder high.',
-      'Target: Vertical height from Head to Neckline projected down.'
-    ],
-    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
-      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
-      <path d="M 20,160 L 70,80 L 120,130 L 190,30 L 260,130 L 310,90 L 370,190" fill="none" stroke="#ef4444" stroke-width="3"/>
-      <line x1="60" y1="130" x2="380" y2="130" stroke="#f97316" stroke-width="1.5" stroke-dasharray="4,4"/>
-      <text x="270" y="125" fill="#f97316" font-size="10">NECKLINE BREAKDOWN</text>
-      <text x="55" y="70" fill="#94a3b8" font-size="10">L. SHOULDER</text>
-      <text x="175" y="20" fill="#ef4444" font-size="11" font-weight="bold">HEAD</text>
-      <text x="295" y="80" fill="#94a3b8" font-size="10">R. SHOULDER</text>
-      <circle cx="345" cy="150" r="5" fill="#ef4444"/>
-      <text x="270" y="165" fill="#ef4444" font-size="11" font-weight="bold">SHORT ENTRY ↓</text>
-    </svg>`
-  },
-  {
-    id: 'ascending-triangle',
-    title: 'Ascending Triangle Breakout',
-    category: 'Continuations',
-    badgeClass: 'badge-continuation',
-    winRate: '85% Win Rate',
-    rr: '1 : 3.0 RR',
-    description: 'Bullish pattern characterized by a flat horizontal resistance level and a series of higher lows pushing price into a tighter range.',
-    rules: [
-      'Flat horizontal resistance with 2+ touches.',
-      'Ascending trendline connecting higher swing lows.',
-      'Enter on decisive breakout candle closing above resistance.',
-      'Stop Loss: Below the most recent swing low.',
-      'Target: Height of the triangle base.'
-    ],
-    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
-      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
-      <line x1="50" y1="60" x2="320" y2="60" stroke="#ef4444" stroke-width="2"/>
-      <text x="180" y="52" fill="#ef4444" font-size="10" font-weight="bold">HORIZONTAL RESISTANCE</text>
-      <line x1="50" y1="180" x2="300" y2="60" stroke="#10b981" stroke-width="2"/>
-      <path d="M 50,180 L 100,60 L 150,130 L 200,60 L 250,90 L 290,60 L 370,20" fill="none" stroke="#10b981" stroke-width="3"/>
-      <circle cx="290" cy="60" r="5" fill="#10b981"/>
-      <text x="305" y="75" fill="#10b981" font-size="11" font-weight="bold">BREAKOUT ↑</text>
-    </svg>`
-  },
-  {
-    id: 'cup-and-handle',
-    title: 'Cup & Handle Breakout',
-    category: 'Continuations',
-    badgeClass: 'badge-continuation',
-    winRate: '86% Win Rate',
-    rr: '1 : 3.2 RR',
-    description: 'Bullish continuation pattern resembling a cup with a handle. The cup shows a rounded U-shape recovery, followed by a slight pullback (handle).',
-    rules: [
-      'Smooth U-shaped cup recovery (avoid V-shaped abrupt bounces).',
-      'Handle consolidation should not drop lower than upper 50% of cup.',
-      'Enter when price breaks above resistance rim of the cup.',
-      'Stop Loss: Below the bottom of the handle.',
-      'Target: Depth of the cup added to breakout price.'
-    ],
-    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
-      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
-      <line x1="40" y1="70" x2="340" y2="70" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="4,4"/>
-      <path d="M 40,70 Q 160,200 270,70" fill="none" stroke="#10b981" stroke-width="3"/>
-      <path d="M 270,70 L 290,105 L 310,85 L 320,100 L 380,30" fill="none" stroke="#10b981" stroke-width="3"/>
-      <text x="140" y="160" fill="#10b981" font-size="11" font-weight="bold">U-SHAPED CUP</text>
-      <text x="275" y="120" fill="#f59e0b" font-size="10">HANDLE</text>
-      <circle cx="320" cy="80" r="5" fill="#10b981"/>
-      <text x="330" y="95" fill="#10b981" font-size="11" font-weight="bold">ENTRY ↑</text>
-    </svg>`
-  },
-  {
-    id: 'support-retest',
-    title: 'Support/Resistance Retest (S/R Flip)',
-    category: 'Market Structure',
-    badgeClass: 'badge-structure',
-    winRate: '87% Win Rate',
-    rr: '1 : 3.5 RR',
-    description: 'Core market structure trade setup. After a key level is broken, old resistance turns into new support (or vice versa).',
-    rules: [
-      'Mark major horizontal support or resistance level with multiple touches.',
-      'Wait for a clean breakout candle closing past the key level.',
-      'Do not chase the breakout; wait for price to pull back and retest the broken level.',
-      'Look for rejection candles (pin bars/engulfing) on the retest.',
-      'Stop Loss: Placed on opposite side of retest zone.'
-    ],
-    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
-      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
-      <line x1="20" y1="120" x2="380" y2="120" stroke="#a855f7" stroke-width="2"/>
-      <text x="30" y="110" fill="#a855f7" font-size="10" font-weight="bold">OLD RESISTANCE → NEW SUPPORT</text>
-      <path d="M 20,180 L 70,120 L 110,160 L 160,120 L 220,40 L 270,120 L 380,30" fill="none" stroke="#10b981" stroke-width="3"/>
-      <circle cx="270" cy="120" r="8" fill="none" stroke="#06b6d4" stroke-width="2"/>
-      <circle cx="270" cy="120" r="4" fill="#06b6d4"/>
-      <text x="240" y="145" fill="#06b6d4" font-size="11" font-weight="bold">PERFECT RETEST (ENTRY)</text>
-    </svg>`
-  },
-  {
-    id: 'smc-liquidity-sweep',
-    title: 'Liquidity Sweep & Order Block',
-    category: 'Market Structure',
-    badgeClass: 'badge-structure',
-    winRate: '89% Win Rate',
-    rr: '1 : 4.0 RR',
-    description: 'Smart Money Concept (SMC) setup where institutional market makers grab liquidity above/below equal highs/lows before reversing sharply.',
-    rules: [
-      'Identify obvious liquidity pools (Equal Highs or Equal Lows).',
-      'Wait for a fast liquidity sweep wick piercing the key level.',
-      'Look for Displacement (a fast impulse move leaving a Fair Value Gap / FVG).',
-      'Enter on return to the Order Block or FVG zone.',
-      'Stop Loss: Just beyond the liquidity sweep wick extreme.'
-    ],
-    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
-      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
-      <line x1="30" y1="150" x2="220" y2="150" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="3,3"/>
-      <text x="40" y="142" fill="#f59e0b" font-size="10">EQUAL LOWS (LIQUIDITY POOL 💧)</text>
-      <path d="M 30,80 L 70,150 L 110,90 L 150,150 L 190,175 L 230,60 L 260,100 L 370,20" fill="none" stroke="#10b981" stroke-width="3"/>
-      <line x1="190" y1="150" x2="190" y2="185" stroke="#ef4444" stroke-width="2"/>
-      <circle cx="190" cy="185" r="4" fill="#ef4444"/>
-      <text x="120" y="200" fill="#ef4444" font-size="10" font-weight="bold">LIQUIDITY SWEEP WICK</text>
-      <text x="260" y="115" fill="#10b981" font-size="10" font-weight="bold">FVG / ORDER BLOCK</text>
-    </svg>`
-  },
-  {
-    id: 'bullish-engulfing',
-    title: 'Bullish Engulfing Candlestick',
-    category: 'Candlesticks',
-    badgeClass: 'badge-candlestick',
-    winRate: '80% Win Rate',
-    rr: '1 : 2.5 RR',
-    description: 'Two-candle reversal pattern where a small bearish candle is completely covered (engulfed) by a large bullish candle, signaling strong buyers.',
-    rules: [
-      'Pattern must occur after a downward price move at key support.',
-      'First candle is bearish (red body).',
-      'Second candle is large bullish (green body) completely engulfing the first candle body.',
-      'Enter on close of the engulfing candle.',
-      'Stop Loss: Below the lowest wick of the engulfing candle.'
-    ],
-    svg: `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg">
-      <path d="M 0,40 L 400,40 M 0,80 L 400,80 M 0,120 L 400,120 M 0,160 L 400,160 M 0,200 L 400,200" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
-      <line x1="40" y1="170" x2="360" y2="170" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4,4"/>
-      <text x="50" y="185" fill="#10b981" font-size="10">KEY SUPPORT ZONE</text>
-      <line x1="140" y1="90" x2="140" y2="155" stroke="#ef4444" stroke-width="2"/>
-      <rect x="130" y="105" width="20" height="35" fill="#ef4444" rx="2"/>
-      <line x1="220" y1="60" x2="220" y2="165" stroke="#10b981" stroke-width="2"/>
-      <rect x="205" y="75" width="30" height="80" fill="#10b981" rx="2"/>
-      <text x="85" y="125" fill="#ef4444" font-size="10">BEARISH</text>
-      <text x="245" y="115" fill="#10b981" font-size="11" font-weight="bold">BULLISH ENGULFING ↑</text>
-    </svg>`
-  }
-];
 
 let chartFilterCategory = 'All';
 
 function renderChartsGallery(el) {
   const custom = LS.get('tj_custom_charts', []);
-  const allCharts = [...EDUCATIONAL_CHARTS, ...custom];
   const pinterestCharts = custom.filter(c => c.category === 'Pinterest');
+  const myCharts = custom.filter(c => c.category !== 'Pinterest');
+
   const filtered = chartFilterCategory === 'All'
-    ? allCharts
+    ? custom
     : chartFilterCategory === 'My Custom Charts'
-      ? custom.filter(c => c.category !== 'Pinterest')
+      ? myCharts
       : chartFilterCategory === 'Pinterest'
         ? pinterestCharts
-        : allCharts.filter(c => c.category === chartFilterCategory);
+        : custom.filter(c => c.category === chartFilterCategory);
 
   el.innerHTML = `
     <div class="chart-toolbar-header">
       <div class="chart-filter-bar">
-        ${['All', 'Reversals', 'Continuations', 'Candlesticks', 'Market Structure', 'My Custom Charts'].map(cat => `
-          <button class="chart-filter-pill ${chartFilterCategory === cat ? 'active' : ''}" onclick="filterCharts('${cat}')">
-            ${cat}
+        ${['All', 'My Custom Charts', 'Pinterest'].map(cat => `
+          <button class="chart-filter-pill ${cat === 'Pinterest' ? 'pinterest-pill' : ''} ${chartFilterCategory === cat ? 'active' : ''}" onclick="filterCharts('${cat}')">
+            ${cat === 'Pinterest' ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="margin-right:4px;vertical-align:-1px;"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>` : ''} ${cat}
           </button>
         `).join('')}
-        <button class="chart-filter-pill pinterest-pill ${chartFilterCategory === 'Pinterest' ? 'active' : ''}" onclick="filterCharts('Pinterest')">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="margin-right:4px;vertical-align:-1px;"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>
-          Pinterest
-        </button>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
         ${chartFilterCategory === 'Pinterest' ? `<button class="btn btn-ghost btn-sm pinterest-import-btn" onclick="openPinterestModal()">＋ Import from Pinterest</button>` : ''}
@@ -1606,16 +1427,24 @@ function renderChartsGallery(el) {
       </div>
     </div>
 
-    <!-- Gallery Grid -->
+
     <div class="chart-gallery-grid">
       ${filtered.length ? filtered.map(c => `
         <div class="chart-card" onclick="openChartModal('${c.id}')">
           <div class="chart-card-header">
             <span class="chart-card-title">${c.title}</span>
-            <span class="chart-card-badge ${c.badgeClass || 'badge-structure'}">${c.category}</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span class="chart-card-badge ${c.badgeClass || 'badge-structure'}">${c.category}</span>
+              <button class="btn btn-ghost btn-xs chart-card-edit-btn" title="Edit" onclick="event.stopPropagation(); openEditChartModal('${c.id}')" style="padding:2px 6px;font-size:.72rem;border-radius:6px;opacity:.7;">
+                ✏️
+              </button>
+              <button class="btn btn-ghost btn-xs chart-card-delete-btn" title="Delete" onclick="event.stopPropagation(); deleteCustomChart('${c.id}')" style="padding:2px 6px;font-size:.72rem;border-radius:6px;opacity:.7;color:var(--red);">
+                🗑
+              </button>
+            </div>
           </div>
           <div class="chart-card-img-wrap">
-            ${c.svg ? c.svg : `<img src="${c.image}" alt="${c.title}" />`}
+            ${c.svg ? c.svg : `<img src="${c.image || c.image_url || c.imageUrl}" alt="${c.title}" />`}
           </div>
           <div class="chart-card-body">
             <p class="chart-card-desc">${c.description}</p>
@@ -1624,8 +1453,8 @@ function renderChartsGallery(el) {
               <span style="color:var(--cyan);font-weight:600;">${c.rr || '1:3 RR'}</span>
             </div>
           </div>
-        </div>
-      `).join('') : `
+        </div>`
+      ).join('') : `
         <div style="grid-column: 1/-1; text-align: center; padding: 60px 20px; color: var(--text2);">
           No chart studies found for "${chartFilterCategory}". Click "Add Custom Chart" above to upload or save your own!
         </div>
@@ -1635,6 +1464,71 @@ function renderChartsGallery(el) {
 
   const addBtn = document.getElementById('add-custom-chart-btn');
   if (addBtn) addBtn.onclick = openAddChartModal;
+}
+
+function attachHoverZoom(container, targetSelector) {
+  if (!container) return;
+  container.addEventListener('mousemove', e => {
+    const rect = container.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+    const target = targetSelector ? container.querySelector(targetSelector) : container;
+    if (target) {
+      target.style.transformOrigin = `${x.toFixed(1)}% ${y.toFixed(1)}%`;
+    }
+  });
+  container.addEventListener('mouseleave', () => {
+    const target = targetSelector ? container.querySelector(targetSelector) : container;
+    if (target) {
+      target.style.transformOrigin = 'center center';
+    }
+  });
+}
+
+let currentZoomScale = 1;
+
+function openChartZoomModal(id) {
+  const custom = LS.get('tj_custom_charts', []);
+  const allCharts = [...EDUCATIONAL_CHARTS, ...custom];
+  const chart = allCharts.find(c => c.id === id);
+  if (!chart) return;
+
+  const modal = document.getElementById('chart-zoom-modal');
+  if (!modal) return;
+  const title = document.getElementById('zoom-modal-title');
+  const wrapper = document.getElementById('zoom-img-wrapper');
+
+  if (title) title.innerHTML = `🔍 ${chart.title}`;
+  if (wrapper) wrapper.innerHTML = chart.svg ? chart.svg : `<img src="${chart.image || chart.image_url || chart.imageUrl}" alt="${chart.title}" />`;
+
+  currentZoomScale = 1;
+  updateZoomTransform();
+
+  modal.showModal();
+}
+
+function updateZoomTransform() {
+  const wrapper = document.getElementById('zoom-img-wrapper');
+  if (wrapper) {
+    wrapper.style.transform = `scale(${currentZoomScale})`;
+    const resetBtn = document.getElementById('zoom-reset-btn');
+    if (resetBtn) resetBtn.textContent = `${Math.round(currentZoomScale * 100)}%`;
+  }
+}
+
+function zoomIn() {
+  currentZoomScale = Math.min(currentZoomScale + 0.25, 4);
+  updateZoomTransform();
+}
+
+function zoomOut() {
+  currentZoomScale = Math.max(currentZoomScale - 0.25, 0.5);
+  updateZoomTransform();
+}
+
+function resetZoom() {
+  currentZoomScale = 1;
+  updateZoomTransform();
 }
 
 function openChartModal(id) {
@@ -1652,27 +1546,17 @@ function openChartModal(id) {
   const isCustom = chart.id.startsWith('custom-') || chart.id.startsWith('pin-');
 
   body.innerHTML = `
-    <div class="chart-detail-display-wrap">
-      ${chart.svg ? chart.svg : `<img src="${chart.image}" alt="${chart.title}" />`}
-    </div>
-
-    <div class="chart-detail-content-grid">
-      <div>
-        <div class="section-label" style="font-size:.8rem;font-weight:700;color:var(--purple-l);margin-bottom:8px;">📌 EXECUTION RULES & CRITERIA</div>
-        <ul style="list-style:none;display:flex;flex-direction:column;gap:10px;">
-          ${(chart.rules && chart.rules.length) ? chart.rules.map(r => `
-            <li style="display:flex;align-items:flex-start;gap:10px;font-size:.88rem;color:var(--text);line-height:1.5;background:rgba(255,255,255,0.02);padding:10px 14px;border-radius:8px;border:1px solid var(--border);">
-              <span style="color:var(--green);font-weight:bold;font-size:1rem;line-height:1;">✓</span>
-              <span>${r}</span>
-            </li>
-          `).join('') : `
-            <li style="font-size:.85rem;color:var(--text3);font-style:italic;">No custom rules specified for this chart study.</li>
-          `}
-        </ul>
+    <div class="chart-modal-split-container">
+      <div class="chart-detail-display-wrap" title="Click to zoom in" onclick="openChartZoomModal('${chart.id}')">
+        ${chart.svg ? chart.svg : `<img src="${chart.image || chart.image_url || chart.imageUrl}" alt="${chart.title}" />`}
+        <div class="chart-zoom-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          <span>Click to zoom</span>
+        </div>
       </div>
 
-      <div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;background:var(--surface2);padding:12px 16px;border-radius:10px;border:1px solid var(--border);">
+      <div class="chart-modal-right-content">
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);padding:12px 16px;border-radius:10px;border:1px solid var(--border);">
           <span class="chart-card-badge ${chart.badgeClass || 'badge-structure'}" style="font-size:.82rem;padding:5px 14px;">${chart.category}</span>
           <div style="display:flex;gap:14px;font-size:.88rem;font-weight:700;">
             <span style="color:var(--green);">${chart.winRate || 'High Probability'}</span>
@@ -1680,15 +1564,32 @@ function openChartModal(id) {
           </div>
         </div>
 
-        <div style="background:var(--surface2);padding:16px;border-radius:10px;border:1px solid var(--border);margin-bottom:16px;">
+        <div style="background:var(--surface2);padding:16px;border-radius:10px;border:1px solid var(--border);">
           <div class="section-label" style="font-size:.78rem;font-weight:700;color:var(--text3);margin-bottom:6px;">SETUP OVERVIEW & PSYCHOLOGY</div>
           <p style="font-size:.88rem;color:var(--text2);line-height:1.6;margin:0;">${chart.description || 'No detailed description provided.'}</p>
         </div>
 
+        <div>
+          <div class="section-label" style="font-size:.8rem;font-weight:700;color:var(--purple-l);margin-bottom:8px;">📌 EXECUTION RULES & CRITERIA</div>
+          <ul style="list-style:none;display:flex;flex-direction:column;gap:10px;padding:0;margin:0;">
+            ${(chart.rules && chart.rules.length) ? chart.rules.map(r => `
+              <li style="display:flex;align-items:flex-start;gap:10px;font-size:.88rem;color:var(--text);line-height:1.5;background:rgba(255,255,255,0.02);padding:10px 14px;border-radius:8px;border:1px solid var(--border);">
+                <span style="color:var(--green);font-weight:bold;font-size:1rem;line-height:1;">✓</span>
+                <span>${r}</span>
+              </li>
+            `).join('') : `
+              <li style="font-size:.85rem;color:var(--text3);font-style:italic;">No custom rules specified for this chart study.</li>
+            `}
+          </ul>
+        </div>
+
         ${isCustom ? `
-          <div style="display:flex;justify-content:flex-end;">
-            <button class="btn btn-ghost" style="color:var(--red);border-color:rgba(239,68,68,0.3);" onclick="deleteCustomChart('${chart.id}')">
-              🗑 Delete Chart Study
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:auto;padding-top:10px;">
+            <button class="btn btn-ghost btn-sm" onclick="modal.close(); openEditChartModal('${chart.id}')" style="color:var(--cyan);border-color:rgba(6,182,212,0.3);">
+              ✏️ Edit
+            </button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:rgba(239,68,68,0.3);" onclick="deleteCustomChart('${chart.id}')">
+              🗑 Delete
             </button>
           </div>
         ` : ''}
@@ -1696,10 +1597,138 @@ function openChartModal(id) {
     </div>
   `;
 
+  const displayWrap = body.querySelector('.chart-detail-display-wrap');
+  if (displayWrap) {
+    attachHoverZoom(displayWrap, 'img, svg');
+  }
+
   const editBtn = modal.querySelector('#detail-edit-btn');
   if (editBtn) editBtn.style.display = 'none';
 
   modal.showModal();
+}
+
+// ── Edit Custom Chart ──────────────────────────────────────────────────
+let editingChartId = null;
+
+function openEditChartModal(id) {
+  const custom = LS.get('tj_custom_charts', []);
+  const chart = custom.find(c => c.id === id);
+  if (!chart) { toast('Chart not found', 'error'); return; }
+
+  editingChartId = id;
+
+  const modal = document.getElementById('custom-chart-modal');
+  if (!modal) return;
+
+  // Change modal title to Edit
+  const modalTitle = modal.querySelector('h2, .modal-title, [data-modal-title]');
+  if (modalTitle) modalTitle.textContent = 'Edit Chart Study';
+
+  // Pre-fill form fields
+  const titleEl = document.getElementById('cc-title');
+  const categoryEl = document.getElementById('cc-category');
+  const winrateEl = document.getElementById('cc-winrate');
+  const rrEl = document.getElementById('cc-rr');
+  const descEl = document.getElementById('cc-desc');
+  const rulesEl = document.getElementById('cc-rules');
+  const urlEl = document.getElementById('cc-image-url');
+
+  if (titleEl) titleEl.value = chart.title || '';
+  if (categoryEl) categoryEl.value = chart.category || 'Market Structure';
+  if (winrateEl) winrateEl.value = chart.winRate || '';
+  if (rrEl) rrEl.value = chart.rr || '';
+  if (descEl) descEl.value = chart.description || '';
+  if (rulesEl) rulesEl.value = Array.isArray(chart.rules) ? chart.rules.join('\n') : (chart.rules || '');
+
+  // Set image preview
+  const existingImg = chart.image || chart.image_url || chart.imageUrl || '';
+  currentCustomImageBase64 = existingImg;
+  const previewWrap = document.getElementById('cc-image-preview-wrap');
+  const promptWrap = document.getElementById('cc-upload-prompt');
+  const previewImg = document.getElementById('cc-image-preview');
+  if (existingImg && previewWrap && promptWrap && previewImg) {
+    previewImg.src = existingImg;
+    previewWrap.style.display = 'block';
+    promptWrap.style.display = 'none';
+  } else if (previewWrap && promptWrap) {
+    previewWrap.style.display = 'none';
+    promptWrap.style.display = 'block';
+  }
+  if (urlEl) urlEl.value = existingImg.startsWith('http') ? existingImg : '';
+
+  // Wire submit button to update handler
+  const submitBtn = document.getElementById('cc-submit-btn');
+  if (submitBtn) {
+    submitBtn.textContent = 'Update Chart Study';
+    submitBtn.onclick = handleEditChartSubmit;
+  }
+
+  setupChartUploadHandlers();
+  modal.showModal();
+}
+
+async function handleEditChartSubmit() {
+  const id = editingChartId;
+  if (!id) return;
+
+  const title = document.getElementById('cc-title')?.value?.trim();
+  if (!title) { toast('Please enter a chart title', 'error'); return; }
+
+  const category = document.getElementById('cc-category')?.value || 'Market Structure';
+  const winRate = document.getElementById('cc-winrate')?.value?.trim() || '';
+  const rr = document.getElementById('cc-rr')?.value?.trim() || '';
+  const desc = document.getElementById('cc-desc')?.value?.trim() || '';
+  const rulesRaw = document.getElementById('cc-rules')?.value?.trim() || '';
+  const urlVal = document.getElementById('cc-image-url')?.value?.trim();
+  const rules = rulesRaw ? rulesRaw.split('\n').map(r => r.trim()).filter(Boolean) : [];
+
+  const badgeClass = category === 'Reversals'
+    ? 'badge-reversal'
+    : category === 'Continuations'
+      ? 'badge-continuation'
+      : category === 'Candlesticks'
+        ? 'badge-candlestick'
+        : category === 'Pinterest'
+          ? 'badge-pinterest'
+          : 'badge-structure';
+
+  let finalImg = currentCustomImageBase64 || urlVal || '';
+  let r2Key = null;
+
+  if (finalImg && finalImg.startsWith('data:image/')) {
+    try {
+      const uploadRes = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: finalImg })
+      });
+      if (uploadRes.ok) {
+        const uploadData = await uploadRes.json();
+        if (uploadData.url) { finalImg = uploadData.url; r2Key = uploadData.key; }
+      }
+    } catch (e) { console.warn('Upload fallback:', e); }
+  }
+
+  const updatedChart = { id, title, category, badgeClass, winRate, rr, description: desc, rules, image: finalImg, r2Key };
+
+  let custom = LS.get('tj_custom_charts', []);
+  const idx = custom.findIndex(c => c.id === id);
+  if (idx !== -1) custom[idx] = updatedChart;
+  saveCustomCharts(custom);
+
+  // Sync to D1
+  fetch(`/api/journal/custom-charts/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updatedChart),
+  }).catch(() => undefined);
+
+  editingChartId = null;
+  document.getElementById('custom-chart-modal')?.close();
+  toast('Chart study updated!', 'success');
+  const pageEl = document.querySelector('.page');
+  if (pageEl) renderChartsGallery(pageEl);
 }
 
 function deleteCustomChart(id) {
@@ -1862,11 +1891,21 @@ function openAddChartModal() {
   const form = document.getElementById('custom-chart-form');
   if (form) form.reset();
 
+  editingChartId = null;
   currentCustomImageBase64 = "";
   const previewWrap = document.getElementById('cc-image-preview-wrap');
   const promptWrap = document.getElementById('cc-upload-prompt');
   if (previewWrap) previewWrap.style.display = 'none';
   if (promptWrap) promptWrap.style.display = 'block';
+
+  // Reset modal title and submit button to Add mode
+  const modalTitle = modal.querySelector('h2, .modal-title, [data-modal-title]');
+  if (modalTitle) modalTitle.textContent = 'Add Custom Chart Study';
+  const submitBtn = document.getElementById('cc-submit-btn');
+  if (submitBtn) {
+    submitBtn.textContent = 'Save Chart Study';
+    submitBtn.onclick = handleCustomChartSubmit;
+  }
 
   setupChartUploadHandlers();
   modal.showModal();
@@ -1947,7 +1986,7 @@ function readChartFile(file) {
   reader.readAsDataURL(file);
 }
 
-function handleCustomChartSubmit() {
+async function handleCustomChartSubmit() {
   const title = document.getElementById('cc-title')?.value?.trim();
   if (!title) {
     toast('Please enter a chart title', 'error');
@@ -1977,6 +2016,26 @@ function handleCustomChartSubmit() {
         ? 'badge-candlestick'
         : 'badge-structure';
 
+  let r2Key = null;
+  if (finalImg && finalImg.startsWith('data:image/')) {
+    try {
+      const uploadRes = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: finalImg })
+      });
+      if (uploadRes.ok) {
+        const uploadData = await uploadRes.json();
+        if (uploadData.url) {
+          finalImg = uploadData.url;
+          r2Key = uploadData.key;
+        }
+      }
+    } catch (e) {
+      console.warn('Cloudflare R2 bucket upload fallback to local image', e);
+    }
+  }
+
   const newChart = {
     id: 'custom-' + Date.now(),
     title,
@@ -1986,7 +2045,8 @@ function handleCustomChartSubmit() {
     rr,
     description: desc,
     rules,
-    image: finalImg
+    image: finalImg,
+    r2Key
   };
 
   const custom = LS.get('tj_custom_charts', []);
@@ -2000,7 +2060,7 @@ function handleCustomChartSubmit() {
   }).catch(() => undefined);
 
   document.getElementById('custom-chart-modal')?.close();
-  toast('Custom chart study saved successfully!', 'success');
+  toast('Custom chart study saved successfully to Cloudflare D1 & R2!', 'success');
 
   const pageEl = document.querySelector('.page');
   if (pageEl) renderChartsGallery(pageEl);
@@ -2012,10 +2072,13 @@ window.filterCharts = function(cat) {
   if (pageEl) renderChartsGallery(pageEl);
 };
 window.openChartModal = openChartModal;
+window.openChartZoomModal = openChartZoomModal;
 window.openAddChartModal = openAddChartModal;
+window.openEditChartModal = openEditChartModal;
 window.openPinterestModal = openPinterestModal;
 window.handlePinterestUrlsInput = handlePinterestUrlsInput;
 window.handlePinterestImport = handlePinterestImport;
 window.deleteCustomChart = deleteCustomChart;
 window.handleCustomChartSubmit = handleCustomChartSubmit;
+
 

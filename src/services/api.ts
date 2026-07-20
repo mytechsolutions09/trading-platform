@@ -1,4 +1,4 @@
-import type { AssetClass, SymbolInfo } from "../data/symbols";
+import { SYMBOL_CATALOG, type AssetClass, type SymbolInfo } from "../data/symbols";
 import type { Order, OrderSide, OrderType, Position } from "../context/TradingContext";
 
 export interface ApiWatchlistItem {
@@ -165,19 +165,23 @@ export async function apiImportLocalStorage(payload: {
   });
 }
 
-/** Map DB watchlist rows to SymbolInfo (prices filled later by live feed) */
+/** Map DB watchlist rows to SymbolInfo — seeds prices from static catalog so UI never shows $0.00 */
 export function toSymbolInfo(item: ApiWatchlistItem): SymbolInfo {
+  // Try to match from static catalog first so we always have a baseline price
+  const catalog = SYMBOL_CATALOG.find(
+    (s) => s.id === item.id || s.symbol === item.symbol
+  );
   return {
     id: item.id,
     symbol: item.symbol,
-    tvSymbol: item.tvSymbol,
+    tvSymbol: item.tvSymbol ?? catalog?.tvSymbol ?? item.symbol,
     name: item.name,
     assetClass: item.assetClass,
-    price: 0,
-    change24h: 0,
-    changePct: 0,
-    volume: "—",
-    high24h: 0,
-    low24h: 0,
+    price: catalog?.price ?? 100,
+    change24h: catalog?.change24h ?? 0,
+    changePct: catalog?.changePct ?? 0,
+    volume: catalog?.volume ?? "—",
+    high24h: catalog?.high24h ?? 100,
+    low24h: catalog?.low24h ?? 100,
   };
 }
