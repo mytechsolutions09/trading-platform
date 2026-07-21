@@ -418,27 +418,34 @@ nav { padding: 14px 12px; flex: 1; }
 }
 
 .subbar-tab.new-entry-tab {
-  background: var(--purple-glow);
-  color: var(--purple-l);
-  border: 1px solid rgba(124, 58, 237, 0.35);
+  border: 1px solid rgba(124, 58, 237, 0.2);
   font-weight: 600;
   margin-bottom: 6px;
 }
 
-.subbar-tab.new-entry-tab:hover {
-  background: rgba(124, 58, 237, 0.3);
-  color: #ffffff;
+.subbar-tab.new-entry-tab:not(.active):hover {
+  background: rgba(124, 58, 237, 0.15);
+  color: var(--purple-l);
+  border-color: rgba(124, 58, 237, 0.4);
+}
+
+.subbar-tab.new-entry-tab.active {
+  background: var(--purple-glow);
+  color: var(--purple-l);
+  border: 1px solid rgba(124, 58, 237, 0.35);
   box-shadow: 0 0 14px var(--purple-glow);
-  border-color: var(--purple-l);
+  border-left: 3px solid var(--purple-l);
 }
 
 .subbar-tab.new-entry-tab .svg-icon {
-  opacity: 1;
-  stroke: var(--purple-l);
+  opacity: 0.75;
+  stroke: currentColor;
 }
 
-.subbar-tab.new-entry-tab:hover .svg-icon {
-  stroke: #ffffff;
+.subbar-tab.new-entry-tab:hover .svg-icon,
+.subbar-tab.new-entry-tab.active .svg-icon {
+  opacity: 1;
+  stroke: var(--purple-l);
 }
 
 [data-theme="light"] .subbar-tab.active {

@@ -588,6 +588,10 @@ export function TradingViewChart({
     let isSubscribed = true;
     container.innerHTML = "";
 
+    // Clear stale candle data immediately so that coordinate extrapolation
+    // doesn't use old interval's timestamps while new candles are loading.
+    candlesRef.current = [];
+
     const isDark = theme === "dark";
     const bg = isDark ? "#0b0e11" : "#ffffff";
     const textColor = isDark ? "#94a3b8" : "#475569";
