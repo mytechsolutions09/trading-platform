@@ -217,11 +217,55 @@ export function initDb() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS journal_sheets (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      trade_no TEXT,
+      market TEXT,
+      time TEXT,
+      account TEXT,
+      account_size REAL,
+      risk_pct REAL,
+      result_r TEXT,
+      net_pnl REAL,
+      asset TEXT,
+      timeframe TEXT,
+      direction TEXT,
+      setup TEXT,
+      entry_reason TEXT,
+      entry_price REAL,
+      entry_time TEXT,
+      stop_loss REAL,
+      tp1 REAL,
+      tp2 REAL,
+      position_size REAL,
+      risk_amt REAL,
+      risk_r TEXT,
+      exit_price REAL,
+      exit_time TEXT,
+      result TEXT,
+      r_multiple TEXT,
+      pnl_amt REAL,
+      pnl_pct TEXT,
+      emotion TEXT,
+      emotion_other TEXT,
+      chart_img TEXT,
+      review_well TEXT,
+      review_bad TEXT,
+      review_lessons TEXT,
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_orders_timestamp ON orders(timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_watchlist_sort ON watchlist(sort_order ASC);
     CREATE INDEX IF NOT EXISTS idx_journal_trades_date ON journal_trades(date DESC);
+    CREATE INDEX IF NOT EXISTS idx_journal_sheets_date ON journal_sheets(date DESC);
     CREATE INDEX IF NOT EXISTS idx_journal_charts_created ON journal_charts(created_at DESC);
   `);
+
+  try { db.exec("ALTER TABLE journal_trades ADD COLUMN stop_loss REAL;"); } catch {}
+  try { db.exec("ALTER TABLE journal_trades ADD COLUMN take_profit REAL;"); } catch {}
+  try { db.exec("ALTER TABLE journal_trades ADD COLUMN chart_img TEXT;"); } catch {}
 
   seedIfEmpty();
   return db;
@@ -853,6 +897,119 @@ export function batchSaveJournalCharts(list: DbJournalChart[]) {
         rulesStr,
         c.image,
         c.createdAt || new Date().toISOString()
+      );
+    });
+  });
+}
+
+export interface DbJournalSheet {
+  id: string;
+  date: string;
+  tradeNo?: string;
+  market?: string;
+  time?: string;
+  account?: string;
+  accountSize?: number;
+  riskPct?: number;
+  resultR?: string;
+  netPnl?: number;
+  asset?: string;
+  timeframe?: string;
+  direction?: string;
+  setup?: string;
+  entryReason?: string;
+  entryPrice?: number;
+  entryTime?: string;
+  stopLoss?: number;
+  tp1?: number;
+  tp2?: number;
+  positionSize?: number;
+  riskAmt?: number;
+  riskR?: string;
+  exitPrice?: number;
+  exitTime?: string;
+  result?: string;
+  rMultiple?: string;
+  pnlAmt?: number;
+  pnlPct?: string;
+  emotion?: string;
+  emotionOther?: string;
+  chartImg?: string;
+  reviewWell?: string;
+  reviewBad?: string;
+  reviewLessons?: string;
+  createdAt?: string;
+}
+
+export function getJournalSheets(): DbJournalSheet[] {
+  return db.prepare(`
+    SELECT id, date, trade_no AS tradeNo, market, time, account, account_size AS accountSize,
+           risk_pct AS riskPct, result_r AS resultR, net_pnl AS netPnl, asset, timeframe, direction,
+           setup, entry_reason AS entryReason, entry_price AS entryPrice, entry_time AS entryTime,
+           stop_loss AS stopLoss, tp1, tp2, position_size AS positionSize, risk_amt AS riskAmt,
+           risk_r AS riskR, exit_price AS exitPrice, exit_time AS exitTime, result, r_multiple AS rMultiple,
+           pnl_amt AS pnlAmt, pnl_pct AS pnlPct, emotion, emotion_other AS emotionOther, chart_img AS chartImg,
+           review_well AS reviewWell, review_bad AS reviewBad, review_lessons AS reviewLessons, created_at AS createdAt
+    FROM journal_sheets
+    ORDER BY date DESC, created_at DESC
+  `).all() as DbJournalSheet[];
+}
+
+export function saveJournalSheet(s: DbJournalSheet) {
+  const createdAt = s.createdAt || new Date().toISOString();
+  db.prepare(`
+    INSERT INTO journal_sheets (
+      id, date, trade_no, market, time, account, account_size, risk_pct, result_r, net_pnl,
+      asset, timeframe, direction, setup, entry_reason, entry_price, entry_time, stop_loss, tp1, tp2,
+      position_size, risk_amt, risk_r, exit_price, exit_time, result, r_multiple, pnl_amt, pnl_pct,
+      emotion, emotion_other, chart_img, review_well, review_bad, review_lessons, created_at
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?
+    ) ON CONFLICT(id) DO UPDATE SET
+      date=excluded.date, trade_no=excluded.trade_no, market=excluded.market, time=excluded.time,
+      account=excluded.account, account_size=excluded.account_size, risk_pct=excluded.risk_pct, result_r=excluded.result_r, net_pnl=excluded.net_pnl,
+      asset=excluded.asset, timeframe=excluded.timeframe, direction=excluded.direction, setup=excluded.setup, entry_reason=excluded.entry_reason,
+      entry_price=excluded.entry_price, entry_time=excluded.entry_time, stop_loss=excluded.stop_loss, tp1=excluded.tp1, tp2=excluded.tp2,
+      position_size=excluded.position_size, risk_amt=excluded.risk_amt, risk_r=excluded.risk_r, exit_price=excluded.exit_price, exit_time=excluded.exit_time,
+      result=excluded.result, r_multiple=excluded.r_multiple, pnl_amt=excluded.pnl_amt, pnl_pct=excluded.pnl_pct, emotion=excluded.emotion,
+      emotion_other=excluded.emotion_other, chart_img=excluded.chart_img, review_well=excluded.review_well, review_bad=excluded.review_bad, review_lessons=excluded.review_lessons
+  `).run(
+    s.id, s.date, s.tradeNo || null, s.market || null, s.time || null, s.account || null, s.accountSize ? Number(s.accountSize) : null, s.riskPct ? Number(s.riskPct) : null, s.resultR || null, s.netPnl ? Number(s.netPnl) : null,
+    s.asset || null, s.timeframe || null, s.direction || null, s.setup || null, s.entryReason || null, s.entryPrice ? Number(s.entryPrice) : null, s.entryTime || null, s.stopLoss ? Number(s.stopLoss) : null, s.tp1 ? Number(s.tp1) : null, s.tp2 ? Number(s.tp2) : null,
+    s.positionSize ? Number(s.positionSize) : null, s.riskAmt ? Number(s.riskAmt) : null, s.riskR || null, s.exitPrice ? Number(s.exitPrice) : null, s.exitTime || null, s.result || null, s.rMultiple || null, s.pnlAmt ? Number(s.pnlAmt) : null, s.pnlPct || null,
+    s.emotion || null, s.emotionOther || null, s.chartImg || null, s.reviewWell || null, s.reviewBad || null, s.reviewLessons || null, createdAt
+  );
+}
+
+export function deleteJournalSheet(id: string) {
+  db.prepare("DELETE FROM journal_sheets WHERE id = ?").run(id);
+}
+
+export function batchSaveJournalSheets(list: DbJournalSheet[]) {
+  db.prepare("DELETE FROM journal_sheets").run();
+  const insert = db.prepare(`
+    INSERT INTO journal_sheets (
+      id, date, trade_no, market, time, account, account_size, risk_pct, result_r, net_pnl,
+      asset, timeframe, direction, setup, entry_reason, entry_price, entry_time, stop_loss, tp1, tp2,
+      position_size, risk_amt, risk_r, exit_price, exit_time, result, r_multiple, pnl_amt, pnl_pct,
+      emotion, emotion_other, chart_img, review_well, review_bad, review_lessons, created_at
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?
+    )
+  `);
+  runInTransaction(() => {
+    list.forEach(s => {
+      insert.run(
+        s.id, s.date, s.tradeNo || null, s.market || null, s.time || null, s.account || null, s.accountSize ? Number(s.accountSize) : null, s.riskPct ? Number(s.riskPct) : null, s.resultR || null, s.netPnl ? Number(s.netPnl) : null,
+        s.asset || null, s.timeframe || null, s.direction || null, s.setup || null, s.entryReason || null, s.entryPrice ? Number(s.entryPrice) : null, s.entryTime || null, s.stopLoss ? Number(s.stopLoss) : null, s.tp1 ? Number(s.tp1) : null, s.tp2 ? Number(s.tp2) : null,
+        s.positionSize ? Number(s.positionSize) : null, s.riskAmt ? Number(s.riskAmt) : null, s.riskR || null, s.exitPrice ? Number(s.exitPrice) : null, s.exitTime || null, s.result || null, s.rMultiple || null, s.pnlAmt ? Number(s.pnlAmt) : null, s.pnlPct || null,
+        s.emotion || null, s.emotionOther || null, s.chartImg || null, s.reviewWell || null, s.reviewBad || null, s.reviewLessons || null, s.createdAt || new Date().toISOString()
       );
     });
   });

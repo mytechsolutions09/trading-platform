@@ -9,7 +9,7 @@ export function Layout() {
   const location = useLocation();
   const { setLeftSidebarCollapsed } = useTrading();
   const isDashboard = location.pathname === "/";
-  const isJournal = location.pathname === "/journal";
+  const isJournal = location.pathname.startsWith("/journal");
   const showHeader = isDashboard && !isJournal;
 
   useEffect(() => {

@@ -498,6 +498,44 @@ body.left-sidebar-collapsed .sidebar-footer {
   background: var(--accent-hover);
 }
 
+/* ─── Journal Button ─── */
+.btn-journal {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, #1a3c34 0%, #0d5c45 100%);
+  color: #a8f0d0;
+  font-weight: 600;
+  font-size: 13px;
+  border: 1px solid rgba(168, 240, 208, 0.2);
+  transition: all 0.18s ease;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+}
+
+.btn-journal:hover {
+  background: linear-gradient(135deg, #0d5c45 0%, #064e38 100%);
+  color: #d0fae9;
+  border-color: rgba(168, 240, 208, 0.4);
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.25);
+  transform: translateY(-1px);
+}
+
+.journal-header-btn {
+  color: #10b981 !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
+  transition: all 0.15s ease !important;
+}
+
+.journal-header-btn:hover {
+  background: rgba(16, 185, 129, 0.12) !important;
+  border-color: rgba(16, 185, 129, 0.55) !important;
+  color: #34d399 !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.2) !important;
+}
+
 /* ─── Panels ─── */
 .panel {
   background: var(--bg-secondary);

@@ -10,65 +10,77 @@
 </head>
 <body>
 
-  <!-- ── Mobile menu toggle ────────────────────────────── -->
-  <button class="menu-toggle" aria-label="Open menu">☰</button>
-
-  <!-- ── Sidebar ───────────────────────────────────────── -->
-  <aside class="sidebar" role="navigation" aria-label="Main navigation">
-    <div class="brand" style="justify-content: flex-end;">
+  <!-- ── Vertical Subbar Navigation ────────────────────── -->
+  <aside class="sidebar journal-subbar" role="navigation" aria-label="Trading Journal Navigation">
+    <div class="brand">
+      <div class="brand-icon">📈</div>
+      <div>
+        <div class="brand-name">Journal</div>
+        <div class="brand-sub">Track & Analyze</div>
+      </div>
       <button class="sidebar-toggle-btn" id="sidebar-toggle-btn" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg class="svg-icon toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
       </button>
     </div>
 
-    <nav aria-label="Pages">
-      <div class="nav-section">Overview</div>
-      <button class="nav-item" data-page="dashboard" id="nav-dashboard" title="Dashboard">
-        <span class="nav-icon">
+    <nav class="subbar-scroll" aria-label="Pages">
+      <div class="subbar-section">Overview</div>
+      <button class="subbar-tab nav-item active" data-page="dashboard" id="nav-dashboard" title="Dashboard">
+        <span class="subbar-icon">
           <svg class="svg-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-        </span> <span class="nav-item-text">Dashboard</span>
+        </span>
+        <span class="subbar-tab-text">Dashboard</span>
       </button>
 
-      <div class="nav-section">Trading</div>
-      <button class="nav-item" data-page="trades" id="nav-trades" title="Trade Log">
-        <span class="nav-icon">
+      <div class="subbar-section">Trading</div>
+      <button class="subbar-tab nav-item" data-page="trades" id="nav-trades" title="Trade Log">
+        <span class="subbar-icon">
           <svg class="svg-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 9h6"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>
-        </span> <span class="nav-item-text">Trade Log</span>
+        </span>
+        <span class="subbar-tab-text">Trade Log</span>
       </button>
-      <button class="nav-item" data-page="analytics" id="nav-analytics" title="Analytics">
-        <span class="nav-icon">
+      <button class="subbar-tab nav-item" data-page="analytics" id="nav-analytics" title="Analytics">
+        <span class="subbar-icon">
           <svg class="svg-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        </span> <span class="nav-item-text">Analytics</span>
+        </span>
+        <span class="subbar-tab-text">Analytics</span>
       </button>
-      <button class="nav-item" data-page="charts" id="nav-charts" title="Charts">
-        <span class="nav-icon">
+      <button class="subbar-tab nav-item" data-page="charts" id="nav-charts" title="Charts">
+        <span class="subbar-icon">
           <svg class="svg-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-        </span> <span class="nav-item-text">Charts</span>
+        </span>
+        <span class="subbar-tab-text">Charts</span>
       </button>
 
-      <div class="nav-section">Mindset</div>
-      <button class="nav-item" data-page="psychology" id="nav-psychology" title="Psychology">
-        <span class="nav-icon">
+      <div class="subbar-section">Mindset & Journal</div>
+      <button class="subbar-tab nav-item new-entry-tab" data-page="new-entry" id="nav-new-entry" title="New Entry">
+        <span class="subbar-icon">
+          <svg class="svg-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </span>
+        <span class="subbar-tab-text">New Entry</span>
+      </button>
+      <button class="subbar-tab nav-item" data-page="psychology" id="nav-psychology" title="Psychology">
+        <span class="subbar-icon">
           <svg class="svg-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1 0-3.12 3 3 0 0 1 0-4.88 2.5 2.5 0 0 1 0-3.12A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 0-3.12 3 3 0 0 0 0-4.88 2.5 2.5 0 0 0 0-3.12A2.5 2.5 0 0 0 14.5 2Z"/></svg>
-        </span> <span class="nav-item-text">Psychology</span>
+        </span>
+        <span class="subbar-tab-text">Psychology</span>
       </button>
-      <button class="nav-item" data-page="journal" id="nav-journal" title="Journal">
-        <span class="nav-icon">
+      <button class="subbar-tab nav-item" data-page="journal" id="nav-journal" title="Journal">
+        <span class="subbar-icon">
           <svg class="svg-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/></svg>
-        </span> <span class="nav-item-text">Journal</span>
+        </span>
+        <span class="subbar-tab-text">Saved Entries</span>
       </button>
 
-      <div class="nav-section">System</div>
-      <button class="nav-item" data-page="settings" id="nav-settings" title="Settings">
-        <span class="nav-icon">
+      <div class="subbar-section">System</div>
+      <button class="subbar-tab nav-item" data-page="settings" id="nav-settings" title="Settings">
+        <span class="subbar-icon">
           <svg class="svg-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        </span> <span class="nav-item-text">Settings</span>
+        </span>
+        <span class="subbar-tab-text">Settings</span>
       </button>
     </nav>
   </aside>
-
-  <!-- ── Sidebar overlay (mobile) ─────────────────────── -->
-  <div class="sidebar-overlay" aria-hidden="true"></div>
 
   <!-- ── Main content ─────────────────────────────────── -->
   <main class="main" id="app-content" role="main">

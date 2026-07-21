@@ -21,6 +21,7 @@ function getAppTheme() {
 }
 let trades   = LS.get('tj_trades',   []);
 let journal  = LS.get('tj_journal',  {});
+let sheets   = LS.get('tj_sheets',   []);
 let settings = LS.get('tj_settings', { capital: 10000, currency: 'USD' });
 let theme    = getAppTheme();
 
@@ -39,6 +40,15 @@ function saveJournal() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(journal),
+  }).catch(() => undefined);
+}
+
+function saveSheets() {
+  LS.set('tj_sheets', sheets);
+  fetch('/api/journal/sheets/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(sheets),
   }).catch(() => undefined);
 }
 
@@ -195,7 +205,7 @@ const RULE_VIOLATIONS = [
 ];
 
 // ── Router ────────────────────────────────────────────────────────────
-const PAGES = ['dashboard', 'trades', 'analytics', 'charts', 'psychology', 'journal', 'settings'];
+const PAGES = ['dashboard', 'trades', 'analytics', 'charts', 'psychology', 'journal', 'new-entry', 'settings'];
 let currentPage = 'dashboard';
 
 function navigate(page) {
@@ -207,13 +217,18 @@ function navigate(page) {
   });
   renderPage(page);
   closeSidebar();
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'APEX_TAB_CHANGED', page }, '*');
+    }
+  } catch (err) {}
 }
 
 function renderPage(page) {
   const container = document.getElementById('app-content');
   container.innerHTML = '';
   const el = document.createElement('div');
-  el.className = 'page';
+  el.className = page === 'new-entry' ? 'page page-no-padding' : 'page';
   container.appendChild(el);
 
   switch (page) {
@@ -222,7 +237,8 @@ function renderPage(page) {
     case 'analytics':   renderAnalytics(el);    break;
     case 'charts':      renderChartsGallery(el); break;
     case 'psychology':  renderPsychology(el);   break;
-    case 'journal':     renderJournal(el);      break;
+    case 'journal':     renderJournal(el, { hideSavedEntries: false }); break;
+    case 'new-entry':   journalDate = new Date().toISOString().slice(0, 10); renderJournal(el, { hideSavedEntries: true }); break;
     case 'settings':    renderSettings(el);     break;
   }
   updateCapitalDisplay();
@@ -230,12 +246,12 @@ function renderPage(page) {
 
 // ── Sidebar mobile ────────────────────────────────────────────────────
 function openSidebar() {
-  document.querySelector('.sidebar').classList.add('open');
-  document.querySelector('.sidebar-overlay').classList.add('show');
+  document.querySelector('.sidebar')?.classList.add('open');
+  document.querySelector('.sidebar-overlay')?.classList.add('show');
 }
 function closeSidebar() {
-  document.querySelector('.sidebar').classList.remove('open');
-  document.querySelector('.sidebar-overlay').classList.remove('show');
+  document.querySelector('.sidebar')?.classList.remove('open');
+  document.querySelector('.sidebar-overlay')?.classList.remove('show');
 }
 
 // ── Capital display ───────────────────────────────────────────────────
@@ -742,84 +758,631 @@ function renderPsychology(el) {
 // ══════════════════════════════════════════════════════════════════════
 let journalDate = new Date().toISOString().slice(0,10);
 
-function renderJournal(el) {
+function renderJournal(el, options = {}) {
+  const hideSaved = !!options.hideSavedEntries;
   const entries = Object.entries(journal).sort((a,b) => b[0].localeCompare(a[0]));
 
-  el.innerHTML = `
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">Journal</h1>
-        <p class="page-subtitle">Daily trading notes & reflections</p>
-      </div>
-    </div>
-    <div class="page-content">
-      <div class="journal-grid">
-        <!-- Entry list -->
-        <div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-            <div class="section-label">Entries</div>
-            <button class="btn btn-ghost btn-sm" id="journal-today-btn">Today</button>
-          </div>
-          <div class="journal-entries" id="journal-list">
-            ${entries.length ? entries.map(([date, text]) => `
-              <div class="journal-entry-item ${date === journalDate ? 'active' : ''}" data-date="${date}" onclick="selectJournalDate('${date}')">
-                <div class="journal-entry-date">${new Date(date + 'T12:00').toLocaleDateString('en', { weekday:'short', month:'short', day:'numeric', year:'numeric' })}</div>
-                <div class="journal-entry-preview">${text.slice(0,80) || '…'}</div>
-              </div>`) .join('') : '<div style="font-size:.8rem;color:var(--text3);padding:8px;">No entries yet</div>'}
-          </div>
-        </div>
-
-        <!-- Editor -->
-        <div class="journal-editor card">
-          <div class="card-header">
-            <input type="date" id="journal-date-input" value="${journalDate}" style="background:transparent;border:none;color:var(--text);font-family:var(--ff-head);font-size:1rem;font-weight:600;cursor:pointer;">
-            <div style="display:flex;gap:8px;">
-              <button class="btn btn-primary btn-sm" id="journal-save-btn">Save</button>
-              <button class="btn btn-danger btn-sm" id="journal-del-btn" ${!journal[journalDate]?'disabled':''}>Delete</button>
+  if (hideSaved) {
+    // ── NEW ENTRY PAGE: Full Trading Journal Log Sheet Template ──────────────
+    el.innerHTML = `
+      <div class="page-content">
+        <div class="tj-sheet-card">
+          <!-- Top Banner / Header -->
+          <div class="tj-sheet-header">
+            <div class="tj-brand-banner">
+              <div class="tj-candlestick-logo">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="6" y1="2" x2="6" y2="22"/><rect x="4" y="6" width="4" height="10" fill="currentColor" opacity="0.3"/>
+                  <line x1="12" y1="2" x2="12" y2="22"/><rect x="10" y="4" width="4" height="12" fill="currentColor"/>
+                  <line x1="18" y1="2" x2="18" y2="22"/><rect x="16" y="8" width="4" height="8" fill="currentColor" opacity="0.3"/>
+                </svg>
+              </div>
+              <div>
+                <h1 class="tj-sheet-title">TRADING JOURNAL</h1>
+                <p class="tj-sheet-tagline">PLAN. EXECUTE. REVIEW. IMPROVE.</p>
+              </div>
+            </div>
+            <div class="tj-meta-box">
+              <div class="tj-meta-row"><label>📅 DATE:</label> <input type="date" id="tj-date" value="${journalDate}"></div>
+              <div class="tj-meta-row"><label>🔄 TRADE #:</label> <input type="text" id="tj-trade-no" placeholder="#${(trades.length + 1).toString().padStart(3, '0')}"></div>
+              <div class="tj-meta-row"><label>📈 MARKET:</label> <input type="text" id="tj-market" placeholder="Crypto / Forex / Stocks"></div>
+              <div class="tj-meta-row"><label>🕒 TIME:</label> <input type="time" id="tj-time" value="${new Date().toTimeString().slice(0,5)}"></div>
             </div>
           </div>
-          <div class="card-body">
-            <textarea id="journal-textarea" placeholder="Write your trading reflections here…
-• What went well today?
-• What mistakes did you make?
-• How was your emotional state?
-• What will you improve tomorrow?" style="min-height:380px;">${journal[journalDate] || ''}</textarea>
+
+          <!-- Row 1: Account Summary Bar -->
+          <div class="tj-account-bar">
+            <div class="tj-bar-item"><label>👤 ACCOUNT</label><input type="text" id="tj-account" placeholder="Main Account"></div>
+            <div class="tj-bar-item"><label>💼 ACCOUNT SIZE ($)</label><input type="number" id="tj-account-size" value="${settings.capital || 10000}"></div>
+            <div class="tj-bar-item"><label>🛡️ RISK PER TRADE (%)</label><input type="number" id="tj-risk-pct" value="1.0" step="0.1"></div>
+            <div class="tj-bar-item">
+              <label>🏆 RESULT (R)</label>
+              <div class="tj-radio-group">
+                <label><input type="radio" name="tj-result-r" value="Win"> WIN</label>
+                <label><input type="radio" name="tj-result-r" value="Loss"> LOSS</label>
+                <label><input type="radio" name="tj-result-r" value="BE"> BE</label>
+              </div>
+            </div>
+            <div class="tj-bar-item"><label>📊 NET P/L ($)</label><input type="number" id="tj-net-pnl" placeholder="0.00" step="0.01"></div>
+          </div>
+
+          <!-- Row 2: 3 Section Grid (Setup, Trade Details, Outcome) -->
+          <div class="tj-three-col-grid">
+            <!-- Col 1: Setup Details -->
+            <div class="tj-col-box">
+              <div class="tj-box-header">1. SETUP DETAILS</div>
+              <div class="tj-box-body">
+                <div class="tj-field"><label>ASSET / PAIR:</label><input type="text" id="tj-asset" placeholder="BTC/USDT, AAPL, EUR/USD…"></div>
+                <div class="tj-field"><label>TIMEFRAME:</label><input type="text" id="tj-timeframe" placeholder="15m, 1h, 4h…"></div>
+                <div class="tj-field">
+                  <label>DIRECTION:</label>
+                  <div class="tj-btn-toggle-group">
+                    <button type="button" class="tj-dir-btn active" data-dir="Long">LONG</button>
+                    <button type="button" class="tj-dir-btn" data-dir="Short">SHORT</button>
+                  </div>
+                </div>
+                <div class="tj-field"><label>SETUP / STRATEGY:</label><input type="text" id="tj-setup" placeholder="Breakout, FVG, Order Block…"></div>
+                <div class="tj-field"><label>ENTRY REASON:</label><textarea id="tj-entry-reason" rows="4" placeholder="Why did you enter this trade? Key triggers, confluence…"></textarea></div>
+              </div>
+            </div>
+
+            <!-- Col 2: Trade Details -->
+            <div class="tj-col-box">
+              <div class="tj-box-header">2. TRADE DETAILS</div>
+              <div class="tj-box-body">
+                <div class="tj-field"><label>ENTRY PRICE:</label><input type="number" id="tj-entry-price" placeholder="0.00" step="any"></div>
+                <div class="tj-field"><label>ENTRY TIME:</label><input type="time" id="tj-entry-time"></div>
+                <div class="tj-field"><label>STOP LOSS:</label><input type="number" id="tj-stop-loss" placeholder="0.00" step="any"></div>
+                <div class="tj-field"><label>TAKE PROFIT (1):</label><input type="number" id="tj-tp1" placeholder="0.00" step="any"></div>
+                <div class="tj-field"><label>TAKE PROFIT (2):</label><input type="number" id="tj-tp2" placeholder="0.00" step="any"></div>
+                <div class="tj-field"><label>POSITION SIZE:</label><input type="number" id="tj-qty" placeholder="1.0" step="any"></div>
+                <div class="tj-field"><label>RISK (AMOUNT $):</label><input type="number" id="tj-risk-amt" placeholder="100.00" step="any"></div>
+                <div class="tj-field"><label>RISK (R MULTIPLE):</label><input type="text" id="tj-risk-r" placeholder="1R"></div>
+              </div>
+            </div>
+
+            <!-- Col 3: Outcome -->
+            <div class="tj-col-box">
+              <div class="tj-box-header">3. OUTCOME</div>
+              <div class="tj-box-body">
+                <div class="tj-field"><label>EXIT PRICE:</label><input type="number" id="tj-exit-price" placeholder="0.00" step="any"></div>
+                <div class="tj-field"><label>EXIT TIME:</label><input type="time" id="tj-exit-time"></div>
+                <div class="tj-field">
+                  <label>RESULT:</label>
+                  <div class="tj-radio-group">
+                    <label><input type="radio" name="tj-outcome-res" value="Win"> WIN</label>
+                    <label><input type="radio" name="tj-outcome-res" value="Loss"> LOSS</label>
+                    <label><input type="radio" name="tj-outcome-res" value="BE"> BE</label>
+                  </div>
+                </div>
+                <div class="tj-field"><label>R-MULTIPLE:</label><input type="text" id="tj-r-multiple" placeholder="2.5R"></div>
+                <div class="tj-field"><label>P/L (AMOUNT $):</label><input type="number" id="tj-pnl-amt" placeholder="0.00" step="any"></div>
+                <div class="tj-field"><label>P/L (%):</label><input type="number" id="tj-pnl-pct" placeholder="0.00%"></div>
+                <div class="tj-field">
+                  <label>EMOTIONS DURING TRADE:</label>
+                  <div class="tj-emotions-picker">
+                    <button type="button" class="tj-emo-btn" data-emo="Calm">😌 Calm</button>
+                    <button type="button" class="tj-emo-btn" data-emo="Confident">☺️ Confident</button>
+                    <button type="button" class="tj-emo-btn" data-emo="Excited">😀 Excited</button>
+                    <button type="button" class="tj-emo-btn" data-emo="Anxious">😟 Anxious</button>
+                    <button type="button" class="tj-emo-btn" data-emo="Fearful">😨 Fearful</button>
+                    <button type="button" class="tj-emo-btn" data-emo="Frustrated">😣 Frustrated</button>
+                  </div>
+                  <input type="text" id="tj-emo-other" placeholder="Other emotion…" style="margin-top:6px;">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Row 3: 4. Chart / Screenshot -->
+          <div class="tj-full-box mt-16">
+            <div class="tj-box-header">4. CHART / SCREENSHOT</div>
+            <div class="tj-chart-container">
+              <div class="tj-upload-dropzone" id="tj-chart-dropzone">
+                <input type="file" id="tj-chart-file-input" accept="image/*" style="display:none;">
+                <div id="tj-chart-preview-wrap" style="display:none;width:100%;height:100%;position:relative;">
+                  <img id="tj-chart-preview-img" src="" alt="Chart Screenshot" style="max-height:360px;max-width:100%;object-fit:contain;border-radius:8px;">
+                  <button type="button" class="btn btn-danger btn-sm" id="tj-remove-chart-btn" style="position:absolute;top:10px;right:10px;">Remove Image</button>
+                </div>
+                <div id="tj-chart-prompt" style="text-align:center;padding:30px 20px;">
+                  <div style="font-size:2rem;margin-bottom:8px;">📷</div>
+                  <div style="font-weight:600;font-size:1rem;color:var(--text);">Drag & Drop Chart Screenshot or Click to Upload</div>
+                  <div style="font-size:0.8rem;color:var(--text3);margin-top:4px;">Supports PNG, JPG, WEBP</div>
+                </div>
+              </div>
+              <div class="tj-key-levels-legend">
+                <div class="tj-legend-title">MARK KEY LEVELS</div>
+                <div class="tj-legend-item"><span class="tj-color-dot" style="background:#10b981;"></span> Entry</div>
+                <div class="tj-legend-item"><span class="tj-color-dot" style="background:#ef4444;"></span> Stop Loss</div>
+                <div class="tj-legend-item"><span class="tj-color-dot" style="background:#06b6d4;"></span> Take Profit 1</div>
+                <div class="tj-legend-item"><span class="tj-color-dot" style="background:#8b5cf6;"></span> Take Profit 2</div>
+                <div class="tj-legend-item"><span class="tj-color-dot" style="background:#f59e0b;"></span> Other</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Row 4: 5. Trade Review -->
+          <div class="tj-full-box mt-16">
+            <div class="tj-box-header">5. TRADE REVIEW</div>
+            <div class="tj-three-col-review">
+              <div class="tj-review-col">
+                <div class="tj-review-title">WHAT WENT WELL?</div>
+                <textarea id="tj-review-well" rows="5" placeholder="• Executed plan well&#10;• Good patience on entry…"></textarea>
+              </div>
+              <div class="tj-review-col">
+                <div class="tj-review-title">WHAT DIDN'T GO WELL?</div>
+                <textarea id="tj-review-bad" rows="5" placeholder="• Moved stop loss&#10;• Entered slightly late…"></textarea>
+              </div>
+              <div class="tj-review-col">
+                <div class="tj-review-title">LESSONS LEARNED</div>
+                <textarea id="tj-review-lessons" rows="5" placeholder="• Always wait for candle close&#10;• Stick to 1% risk rule…"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sheet Actions Bar -->
+          <div class="tj-sheet-actions mt-20" style="display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-style:italic;font-size:0.85rem;color:var(--text3);">
+              “The goal is not to be right every time, <strong style="color:var(--green)">but to make money over time.</strong>” 🎯
+            </div>
+            <div style="display:flex;gap:12px;">
+              <button type="button" class="btn btn-ghost" id="tj-clear-btn">Clear Sheet</button>
+              <button type="button" class="btn btn-primary btn-lg" id="tj-sheet-save-btn">💾 Save Entry</button>
+            </div>
           </div>
         </div>
+      </div>`;
+
+    // Bind Direction Buttons
+    let activeDirection = 'Long';
+    el.querySelectorAll('.tj-dir-btn').forEach(btn => {
+      btn.onclick = () => {
+        el.querySelectorAll('.tj-dir-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeDirection = btn.dataset.dir;
+      };
+    });
+
+    // Bind Emotion Buttons
+    let selectedEmotion = 'Calm';
+    el.querySelectorAll('.tj-emo-btn').forEach(btn => {
+      btn.onclick = () => {
+        el.querySelectorAll('.tj-emo-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedEmotion = btn.dataset.emo;
+      };
+    });
+
+    // Bind Chart Image Upload
+    const dropzone = el.querySelector('#tj-chart-dropzone');
+    const fileInput = el.querySelector('#tj-chart-file-input');
+    const previewWrap = el.querySelector('#tj-chart-preview-wrap');
+    const previewImg = el.querySelector('#tj-chart-preview-img');
+    const promptWrap = el.querySelector('#tj-chart-prompt');
+    const removeBtn = el.querySelector('#tj-remove-chart-btn');
+    let chartImageData = null;
+
+    if (dropzone && fileInput) {
+      dropzone.onclick = (e) => {
+        if (e.target !== removeBtn && !removeBtn?.contains(e.target)) fileInput.click();
+      };
+      fileInput.onchange = (e) => {
+        const file = e.target.files?.[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            chartImageData = evt.target.result;
+            previewImg.src = chartImageData;
+            previewWrap.style.display = 'block';
+            promptWrap.style.display = 'none';
+          };
+          reader.readAsDataURL(file);
+        }
+      };
+    }
+    if (removeBtn) {
+      removeBtn.onclick = (e) => {
+        e.stopPropagation();
+        chartImageData = null;
+        previewImg.src = '';
+        previewWrap.style.display = 'none';
+        promptWrap.style.display = 'block';
+        if (fileInput) fileInput.value = '';
+      };
+    }
+
+    // Bind Auto P&L calculation when Entry / Exit / Position size change
+    const calcPnlSheet = () => {
+      const entryP = parseFloat(el.querySelector('#tj-entry-price')?.value);
+      const exitP = parseFloat(el.querySelector('#tj-exit-price')?.value);
+      const qtyP = parseFloat(el.querySelector('#tj-qty')?.value) || 1;
+      const slP = parseFloat(el.querySelector('#tj-stop-loss')?.value);
+
+      if (!isNaN(entryP) && !isNaN(exitP)) {
+        const dirMult = activeDirection === 'Long' ? 1 : -1;
+        const pnl = (exitP - entryP) * dirMult * qtyP;
+        const netPnlEl = el.querySelector('#tj-net-pnl');
+        const pnlAmtEl = el.querySelector('#tj-pnl-amt');
+        if (netPnlEl) netPnlEl.value = pnl.toFixed(2);
+        if (pnlAmtEl) pnlAmtEl.value = pnl.toFixed(2);
+
+        if (!isNaN(slP) && Math.abs(entryP - slP) > 0) {
+          const riskAmt = Math.abs(entryP - slP) * qtyP;
+          const rMult = pnl / riskAmt;
+          const riskAmtEl = el.querySelector('#tj-risk-amt');
+          const rMultEl = el.querySelector('#tj-r-multiple');
+          if (riskAmtEl && !riskAmtEl.value) riskAmtEl.value = riskAmt.toFixed(2);
+          if (rMultEl) rMultEl.value = rMult.toFixed(2) + 'R';
+        }
+      }
+    };
+
+    ['#tj-entry-price', '#tj-exit-price', '#tj-qty', '#tj-stop-loss'].forEach(id => {
+      el.querySelector(id)?.addEventListener('input', calcPnlSheet);
+    });
+
+    // Clear Sheet Button
+    const clearBtn = el.querySelector('#tj-clear-btn');
+    if (clearBtn) {
+      clearBtn.onclick = () => renderPage('new-entry');
+    }
+
+    // Save Entry Sheet Button
+    const saveSheetBtn = el.querySelector('#tj-sheet-save-btn');
+    if (saveSheetBtn) {
+      saveSheetBtn.onclick = () => {
+        const entryDate = el.querySelector('#tj-date')?.value || journalDate;
+        const asset = (el.querySelector('#tj-asset')?.value || '').trim();
+        const entryPrice = parseFloat(el.querySelector('#tj-entry-price')?.value);
+        const exitPrice = parseFloat(el.querySelector('#tj-exit-price')?.value);
+        const quantity = parseFloat(el.querySelector('#tj-qty')?.value) || 1;
+        const setupVal = (el.querySelector('#tj-setup')?.value || '').trim();
+        const marketVal = (el.querySelector('#tj-market')?.value || '').trim();
+        const reasonVal = (el.querySelector('#tj-entry-reason')?.value || '').trim();
+        const wellVal = (el.querySelector('#tj-review-well')?.value || '').trim();
+        const badVal = (el.querySelector('#tj-review-bad')?.value || '').trim();
+        const lessonsVal = (el.querySelector('#tj-review-lessons')?.value || '').trim();
+
+        // Create trade object if asset and entryPrice provided
+        if (asset && !isNaN(entryPrice)) {
+          const outcomeRadio = el.querySelector('input[name="tj-outcome-res"]:checked') || el.querySelector('input[name="tj-result-r"]:checked');
+          const outcomeVal = outcomeRadio ? outcomeRadio.value : (!isNaN(exitPrice) ? (exitPrice > entryPrice ? 'Win' : 'Loss') : 'Win');
+          const newTrade = {
+            id: uid(),
+            date: entryDate,
+            ticker: asset.toUpperCase(),
+            assetType: marketVal || 'Stock',
+            direction: activeDirection,
+            entryPrice,
+            exitPrice: !isNaN(exitPrice) ? exitPrice : null,
+            quantity,
+            fees: 0,
+            stopLoss: parseFloat(el.querySelector('#tj-stop-loss')?.value) || null,
+            takeProfit: parseFloat(el.querySelector('#tj-tp1')?.value) || null,
+            emotion: selectedEmotion,
+            setup: setupVal,
+            outcome: outcomeVal,
+            chartImg: chartImageData || null,
+          };
+          trades.push(newTrade);
+          saveTrades();
+        }
+
+        // Save Reflection Journal Note
+        const compiledNote = `
+### 📈 Trading Journal Entry (${entryDate}) ${asset ? `— ${asset.toUpperCase()} (${activeDirection})` : ''}
+
+**Account / Market:** ${el.querySelector('#tj-account')?.value || 'Main'} | ${marketVal || 'General'}
+**Setup & Timeframe:** ${setupVal || 'N/A'} (${el.querySelector('#tj-timeframe')?.value || 'N/A'})
+**Entry Triggers & Reason:**
+${reasonVal || 'No entry notes specified.'}
+
+---
+#### 📝 Trade Review:
+- **What Went Well:** ${wellVal || 'N/A'}
+- **What Didn't Go Well:** ${badVal || 'N/A'}
+- **Lessons Learned:** ${lessonsVal || 'N/A'}
+        `.trim();
+
+        // Save Sheet Object to SQL & local storage
+        const sheetObj = {
+          id: uid(),
+          date: entryDate,
+          tradeNo: el.querySelector('#tj-trade-no')?.value || '',
+          market: marketVal,
+          time: el.querySelector('#tj-time')?.value || '',
+          account: el.querySelector('#tj-account')?.value || '',
+          accountSize: parseFloat(el.querySelector('#tj-account-size')?.value) || 0,
+          riskPct: parseFloat(el.querySelector('#tj-risk-pct')?.value) || 0,
+          resultR: el.querySelector('input[name="tj-result-r"]:checked')?.value || '',
+          netPnl: parseFloat(el.querySelector('#tj-net-pnl')?.value) || 0,
+          asset: asset,
+          timeframe: el.querySelector('#tj-timeframe')?.value || '',
+          direction: activeDirection,
+          setup: setupVal,
+          entryReason: reasonVal,
+          entryPrice: !isNaN(entryPrice) ? entryPrice : 0,
+          entryTime: el.querySelector('#tj-entry-time')?.value || '',
+          stopLoss: parseFloat(el.querySelector('#tj-stop-loss')?.value) || null,
+          tp1: parseFloat(el.querySelector('#tj-tp1')?.value) || null,
+          tp2: parseFloat(el.querySelector('#tj-tp2')?.value) || null,
+          positionSize: quantity,
+          riskAmt: parseFloat(el.querySelector('#tj-risk-amt')?.value) || null,
+          riskR: el.querySelector('#tj-risk-r')?.value || '',
+          exitPrice: !isNaN(exitPrice) ? exitPrice : null,
+          exitTime: el.querySelector('#tj-exit-time')?.value || '',
+          result: el.querySelector('input[name="tj-outcome-res"]:checked')?.value || '',
+          rMultiple: el.querySelector('#tj-r-multiple')?.value || '',
+          pnlAmt: parseFloat(el.querySelector('#tj-pnl-amt')?.value) || 0,
+          pnlPct: el.querySelector('#tj-pnl-pct')?.value || '',
+          emotion: selectedEmotion,
+          emotionOther: el.querySelector('#tj-emo-other')?.value || '',
+          chartImg: chartImageData || null,
+          reviewWell: wellVal,
+          reviewBad: badVal,
+          reviewLessons: lessonsVal,
+          createdAt: new Date().toISOString()
+        };
+        sheets.push(sheetObj);
+        saveSheets();
+
+        journal[entryDate] = compiledNote;
+        saveJournal();
+        toast('Trading Journal Sheet Saved Successfully ✓', 'success');
+        navigate('journal');
+      };
+    }
+  } else {
+    // ── SAVED ENTRIES PAGE (Premium Detail Viewer) ─────────
+    const journalDates = Object.keys(journal);
+    const sheetDates = sheets.map(s => s.date).filter(Boolean);
+    const allDatesSet = new Set([...journalDates, ...sheetDates]);
+    const sortedDates = Array.from(allDatesSet).sort((a,b) => b.localeCompare(a));
+
+    if (!journalDate && sortedDates.length > 0) {
+      journalDate = sortedDates[0];
+    }
+
+    const currentNote = journal[journalDate] || '';
+    const currentSheetsForDate = sheets.filter(s => s.date === journalDate);
+
+    const renderStatChip = (label, value, color = '') => `
+      <div style="display:flex;flex-direction:column;gap:2px;padding:10px 14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border);min-width:90px;">
+        <span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);">${label}</span>
+        <span style="font-size:0.9rem;font-weight:700;color:${color || 'var(--text)'};">${value || '—'}</span>
+      </div>`;
+
+    const renderSheet = (s) => {
+      const pnl = s.netPnl || 0;
+      const isPnlPos = pnl >= 0;
+      const resultColor = s.result === 'Win' ? 'var(--green)' : s.result === 'Loss' ? 'var(--red)' : 'var(--text2)';
+      const dirColor = (s.direction||'Long') === 'Long' ? '#22d3ee' : '#f87171';
+      return `
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.18);">
+          <!-- Sheet Hero Header -->
+          <div style="background:linear-gradient(135deg,rgba(109,40,217,0.18) 0%,rgba(6,182,212,0.1) 100%);border-bottom:1px solid var(--border);padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start;">
+            <div>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                <span style="font-size:1.35rem;">📈</span>
+                <h2 style="font-size:1.4rem;font-weight:800;color:var(--text);margin:0;">${s.asset ? s.asset.toUpperCase() : 'Trading Sheet'}</h2>
+                <span style="padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:700;background:${dirColor}22;color:${dirColor};border:1px solid ${dirColor}44;">${s.direction || 'Long'}</span>
+                ${s.result ? `<span style="padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:700;background:${resultColor}22;color:${resultColor};border:1px solid ${resultColor}44;">${s.result}</span>` : ''}
+              </div>
+              <div style="display:flex;align-items:center;gap:16px;font-size:0.8rem;color:var(--text3);">
+                <span>📅 ${new Date(s.date + 'T12:00').toLocaleDateString('en',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</span>
+                ${s.time ? `<span>🕐 ${s.time}</span>` : ''}
+                ${s.market ? `<span>🌐 ${s.market}</span>` : ''}
+                ${s.account ? `<span>🏦 ${s.account}</span>` : ''}
+                ${s.timeframe ? `<span>⏱ ${s.timeframe}</span>` : ''}
+              </div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);margin-bottom:2px;">NET P/L</div>
+              <div style="font-size:2rem;font-weight:900;color:${isPnlPos ? 'var(--green)' : 'var(--red)'};">${isPnlPos ? '+' : ''}${fmtCurr(pnl, true)}</div>
+              ${s.rMultiple ? `<div style="font-size:0.85rem;font-weight:600;color:var(--text2);">${s.rMultiple}</div>` : ''}
+            </div>
+          </div>
+
+          <!-- Stats Row -->
+          <div style="padding:16px 24px;display:flex;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--border);">
+            ${renderStatChip('Entry Price', s.entryPrice ? currSym() + s.entryPrice : null)}
+            ${renderStatChip('Exit Price', s.exitPrice ? currSym() + s.exitPrice : null)}
+            ${renderStatChip('Stop Loss', s.stopLoss ? currSym() + s.stopLoss : null, 'var(--red)')}
+            ${renderStatChip('Take Profit 1', s.tp1 ? currSym() + s.tp1 : null, 'var(--green)')}
+            ${renderStatChip('Take Profit 2', s.tp2 ? currSym() + s.tp2 : null, 'var(--green)')}
+            ${renderStatChip('Position Size', s.positionSize)}
+            ${renderStatChip('Risk $', s.riskAmt ? currSym() + s.riskAmt : null, 'var(--red)')}
+            ${renderStatChip('P/L %', s.pnlPct ? s.pnlPct + '%' : null, isPnlPos ? 'var(--green)' : 'var(--red)')}
+          </div>
+
+          <!-- Setup & Emotion Row -->
+          <div style="padding:16px 24px;display:grid;grid-template-columns:1fr 1fr;gap:16px;border-bottom:1px solid var(--border);">
+            <div>
+              <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);margin-bottom:6px;">Setup / Strategy</div>
+              <div style="font-size:0.95rem;font-weight:600;color:var(--text);">${s.setup || '—'}</div>
+              ${s.entryReason ? `<div style="margin-top:8px;font-size:0.8rem;color:var(--text2);line-height:1.5;">${s.entryReason}</div>` : ''}
+            </div>
+            <div>
+              <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);margin-bottom:6px;">Emotional State</div>
+              <div style="font-size:1.1rem;font-weight:600;color:var(--text);">${s.emotion || 'Calm 😌'}</div>
+              ${s.tradeNo ? `<div style="margin-top:6px;font-size:0.78rem;color:var(--text3);">Trade #${s.tradeNo}</div>` : ''}
+            </div>
+          </div>
+
+          ${s.chartImg ? `
+          <!-- Chart Screenshot -->
+          <div style="padding:16px 24px;border-bottom:1px solid var(--border);">
+            <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);margin-bottom:10px;">Chart Screenshot</div>
+            <img src="${s.chartImg}" alt="Trade Chart" style="width:100%;border-radius:10px;border:1px solid var(--border);max-height:340px;object-fit:contain;background:var(--surface2);">
+          </div>
+          ` : ''}
+
+          ${(s.reviewWell || s.reviewBad || s.reviewLessons) ? `
+          <!-- Trade Review -->
+          <div style="padding:16px 24px;">
+            <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);margin-bottom:12px;">Trade Review</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+              <div style="padding:14px;background:rgba(34,197,94,0.07);border:1px solid rgba(34,197,94,0.2);border-radius:10px;border-left:3px solid var(--green);">
+                <div style="font-size:0.72rem;font-weight:700;color:var(--green);margin-bottom:6px;display:flex;align-items:center;gap:4px;">✅ What Went Well</div>
+                <div style="font-size:0.85rem;color:var(--text);line-height:1.5;">${s.reviewWell || '—'}</div>
+              </div>
+              <div style="padding:14px;background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.2);border-radius:10px;border-left:3px solid var(--red);">
+                <div style="font-size:0.72rem;font-weight:700;color:var(--red);margin-bottom:6px;display:flex;align-items:center;gap:4px;">❌ What Didn't Go Well</div>
+                <div style="font-size:0.85rem;color:var(--text);line-height:1.5;">${s.reviewBad || '—'}</div>
+              </div>
+              <div style="padding:14px;background:rgba(6,182,212,0.07);border:1px solid rgba(6,182,212,0.2);border-radius:10px;border-left:3px solid var(--cyan);">
+                <div style="font-size:0.72rem;font-weight:700;color:var(--cyan);margin-bottom:6px;display:flex;align-items:center;gap:4px;">💡 Lessons Learned</div>
+                <div style="font-size:0.85rem;color:var(--text);line-height:1.5;">${s.reviewLessons || '—'}</div>
+              </div>
+            </div>
+          </div>
+          ` : ''}
+        </div>`;
+    };
+
+    el.innerHTML = `
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Saved Entries</h1>
+          <p class="page-subtitle">${sortedDates.length} trading log${sortedDates.length !== 1 ? 's' : ''} saved</p>
+        </div>
+        <button class="btn btn-primary" id="journal-new-entry-btn" style="display:flex;align-items:center;gap:8px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Sheet Entry
+        </button>
       </div>
-    </div>`;
+      <div class="page-content">
+        <div style="display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start;">
 
-  el.querySelector('#journal-today-btn').onclick = () => {
-    journalDate = new Date().toISOString().slice(0,10);
-    renderPage('journal');
-  };
+          <!-- ── Sidebar ── -->
+          <div style="position:sticky;top:20px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+              <span style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);">Journal Logs · ${sortedDates.length}</span>
+              <button class="btn btn-ghost btn-sm" id="journal-today-btn">Today</button>
+            </div>
+            <div id="journal-list" style="display:flex;flex-direction:column;gap:6px;max-height:80vh;overflow-y:auto;padding-right:2px;">
+              ${sortedDates.length ? sortedDates.map(date => {
+                const isActive = date === journalDate;
+                const dateSheets = sheets.filter(s => s.date === date);
+                const mainSheet = dateSheets[0];
+                const hasNote = !!journal[date];
+                const pnl = mainSheet?.netPnl;
+                const isPnlPos = (pnl || 0) >= 0;
+                const d = new Date(date + 'T12:00');
+                return `<div class="sj-entry-card${isActive ? ' sj-active' : ''}" data-date="${date}" onclick="selectJournalDate('${date}')" style="padding:12px 14px;border-radius:12px;background:${isActive ? 'var(--purple-glow)' : 'var(--card)'};border:1px solid ${isActive ? 'var(--purple-l)' : 'var(--border)'};cursor:pointer;transition:all 0.15s ease;">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+                    <div>
+                      <div style="font-weight:800;font-size:0.92rem;color:${isActive ? 'var(--purple-l)' : 'var(--text)'};">${d.toLocaleDateString('en',{month:'short',day:'numeric'})}</div>
+                      <div style="font-size:0.72rem;color:var(--text3);">${d.toLocaleDateString('en',{weekday:'long',year:'numeric'})}</div>
+                    </div>
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">
+                      ${mainSheet ? `<span style="padding:2px 7px;border-radius:8px;font-size:0.65rem;font-weight:700;background:rgba(109,40,217,0.2);color:var(--purple-l);">SHEET</span>` : ''}
+                      ${hasNote ? `<span style="padding:2px 7px;border-radius:8px;font-size:0.65rem;font-weight:700;background:rgba(6,182,212,0.15);color:var(--cyan);">NOTE</span>` : ''}
+                    </div>
+                  </div>
+                  ${mainSheet ? `
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                      <div style="font-size:0.8rem;font-weight:700;color:var(--text2);">${mainSheet.asset ? mainSheet.asset.toUpperCase() : '—'} <span style="font-size:0.7rem;font-weight:600;color:${(mainSheet.direction||'Long')==='Long'?'#22d3ee':'#f87171'};">${mainSheet.direction||'Long'}</span></div>
+                      ${pnl !== null && pnl !== undefined ? `<div style="font-size:0.85rem;font-weight:800;color:${isPnlPos?'var(--green)':'var(--red)'};">${isPnlPos?'+':''}${fmtCurr(pnl,true)}</div>` : ''}
+                    </div>
+                    ${mainSheet.setup ? `<div style="font-size:0.72rem;color:var(--text3);margin-top:2px;">${mainSheet.setup}</div>` : ''}
+                  ` : (hasNote ? `<div style="font-size:0.78rem;color:var(--text3);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${journal[date].replace(/^[#*\s-]+/gm,'').slice(0,80)}</div>` : '')}
+                </div>`;
+              }).join('') : `
+                <div style="text-align:center;padding:32px 16px;color:var(--text3);">
+                  <div style="font-size:2.5rem;margin-bottom:10px;">📒</div>
+                  <div style="font-weight:700;color:var(--text);font-size:0.95rem;margin-bottom:6px;">No entries yet</div>
+                  <div style="font-size:0.8rem;margin-bottom:16px;">Start logging your trades</div>
+                  <button class="btn btn-primary btn-sm" onclick="navigate('new-entry')">Create First Entry</button>
+                </div>`}
+            </div>
+          </div>
 
-  el.querySelector('#journal-date-input').addEventListener('change', e => {
-    journalDate = e.target.value;
-    renderPage('journal');
-  });
+          <!-- ── Main Detail Panel ── -->
+          <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
+            ${sortedDates.length === 0 ? `
+              <div style="text-align:center;padding:80px 24px;background:var(--card);border:1px solid var(--border);border-radius:16px;">
+                <div style="font-size:3rem;margin-bottom:12px;">📈</div>
+                <h2 style="margin:0 0 8px;color:var(--text);">Your Journal is Empty</h2>
+                <p style="color:var(--text3);margin-bottom:20px;">Fill in the trading log sheet to track your performance</p>
+                <button class="btn btn-primary" onclick="navigate('new-entry')">＋ Create New Entry</button>
+              </div>
+            ` : journalDate ? `
+              ${currentSheetsForDate.map(s => renderSheet(s)).join('')}
 
-  el.querySelector('#journal-save-btn').onclick = () => {
-    const text = el.querySelector('#journal-textarea').value.trim();
-    if (text) { journal[journalDate] = text; } else { delete journal[journalDate]; }
-    saveJournal();
-    toast('Journal entry saved ✓', 'success');
-    renderPage('journal');
-  };
+              <!-- Daily Notes Card -->
+              <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.12);">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--surface2);">
+                  <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:1.1rem;">📝</span>
+                    <input type="date" id="journal-date-input" value="${journalDate}" style="background:transparent;border:none;outline:none;color:var(--text);font-family:var(--ff-head);font-size:1rem;font-weight:700;cursor:pointer;">
+                    <span style="font-size:0.75rem;color:var(--text3);">Daily Reflection</span>
+                  </div>
+                  <div style="display:flex;gap:8px;">
+                    <button class="btn btn-primary btn-sm" id="journal-save-btn" style="display:flex;align-items:center;gap:6px;">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                      Save
+                    </button>
+                    <button class="btn btn-danger btn-sm" id="journal-del-btn" ${!journal[journalDate]?'disabled':''}>Delete</button>
+                  </div>
+                </div>
+                <div style="padding:0;">
+                  <textarea id="journal-textarea" placeholder="Write your daily trading notes &amp; reflections here…&#10;&#10;• What was the market doing today?&#10;• How did you feel during trades?&#10;• Key lessons and observations…" style="width:100%;min-height:260px;font-family:var(--ff-body);line-height:1.7;font-size:0.9rem;padding:18px 20px;background:transparent;color:var(--text);border:none;outline:none;resize:vertical;box-sizing:border-box;">${currentNote}</textarea>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      </div>`;
 
-  el.querySelector('#journal-del-btn').onclick = () => {
-    if (!journal[journalDate]) return;
-    delete journal[journalDate];
-    saveJournal();
-    toast('Entry deleted', 'info');
-    renderPage('journal');
-  };
+    const newEntryBtn = el.querySelector('#journal-new-entry-btn');
+    if (newEntryBtn) newEntryBtn.onclick = () => navigate('new-entry');
+
+    const todayBtn = el.querySelector('#journal-today-btn');
+    if (todayBtn) {
+      todayBtn.onclick = () => {
+        journalDate = new Date().toISOString().slice(0,10);
+        renderPage('journal');
+      };
+    }
+
+    const dateInput = el.querySelector('#journal-date-input');
+    if (dateInput) {
+      dateInput.addEventListener('change', e => {
+        journalDate = e.target.value;
+        renderPage(currentPage);
+      });
+    }
+
+    const saveBtn = el.querySelector('#journal-save-btn');
+    if (saveBtn) {
+      saveBtn.onclick = () => {
+        const text = el.querySelector('#journal-textarea').value.trim();
+        if (text) { journal[journalDate] = text; } else { delete journal[journalDate]; }
+        saveJournal();
+        toast('Journal entry saved ✓', 'success');
+        renderPage('journal');
+      };
+    }
+
+    const delBtn = el.querySelector('#journal-del-btn');
+    if (delBtn) {
+      delBtn.onclick = () => {
+        if (!journal[journalDate]) return;
+        delete journal[journalDate];
+        saveJournal();
+        toast('Entry deleted', 'info');
+        renderPage('journal');
+      };
+    }
+  }
 }
 
 function selectJournalDate(date) {
   journalDate = date;
   renderPage('journal');
 }
+
 
 // ══════════════════════════════════════════════════════════════════════
 //  SETTINGS
@@ -1227,9 +1790,12 @@ function init() {
   });
 
   // Modal close buttons
-  document.getElementById('modal-close').onclick = closeTradeModal;
-  document.getElementById('modal-submit').onclick = handleTradeSubmit;
-  document.getElementById('detail-close').onclick = () => document.getElementById('detail-modal').close();
+  const modalClose = document.getElementById('modal-close');
+  if (modalClose) modalClose.onclick = closeTradeModal;
+  const modalSubmit = document.getElementById('modal-submit');
+  if (modalSubmit) modalSubmit.onclick = handleTradeSubmit;
+  const detailClose = document.getElementById('detail-close');
+  if (detailClose) detailClose.onclick = () => document.getElementById('detail-modal')?.close();
   const ccClose = document.getElementById('custom-chart-close');
   if (ccClose) ccClose.onclick = () => document.getElementById('custom-chart-modal')?.close();
   const pinClose = document.getElementById('pinterest-modal-close');
@@ -1264,8 +1830,10 @@ function init() {
   });
 
   // Mobile menu
-  document.querySelector('.menu-toggle').onclick = openSidebar;
-  document.querySelector('.sidebar-overlay').onclick = closeSidebar;
+  const menuToggle = document.querySelector('.menu-toggle');
+  if (menuToggle) menuToggle.onclick = openSidebar;
+  const sidebarOverlay = document.querySelector('.sidebar-overlay');
+  if (sidebarOverlay) sidebarOverlay.onclick = closeSidebar;
 
   // Theme toggle (auto-synced with main platform)
   applyTheme();
@@ -1276,6 +1844,11 @@ function init() {
     if (e.data) {
       const t = e.data.theme || (e.data.type === 'APEX_THEME_CHANGE' ? e.data.theme : null);
       if (t) applyTheme(t);
+      if (e.data.type === 'APEX_NAVIGATE' && e.data.page) {
+        if (e.data.page !== currentPage) {
+          navigate(e.data.page);
+        }
+      }
     }
   });
 
@@ -1375,6 +1948,22 @@ async function loadFromSql() {
     console.warn('Failed to load custom charts from SQL:', err);
   }
 
+  let dbSheetsEmpty = false;
+  try {
+    const resSheets = await fetch('/api/journal/sheets');
+    if (resSheets.ok) {
+      const data = await resSheets.json();
+      if (data && data.length > 0) {
+        sheets = data;
+        LS.set('tj_sheets', sheets);
+      } else {
+        dbSheetsEmpty = true;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load sheets from SQL:', err);
+  }
+
   if (dbTradesEmpty && trades && trades.length > 0) {
     saveTrades();
   }
@@ -1384,6 +1973,9 @@ async function loadFromSql() {
   const localCustom = LS.get('tj_custom_charts', []);
   if (dbChartsEmpty && localCustom && localCustom.length > 0) {
     saveCustomCharts(localCustom);
+  }
+  if (dbSheetsEmpty && sheets && sheets.length > 0) {
+    saveSheets();
   }
 }
 

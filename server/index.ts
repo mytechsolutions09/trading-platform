@@ -27,6 +27,10 @@ import {
   saveJournalChart,
   deleteJournalChart,
   batchSaveJournalCharts,
+  getJournalSheets,
+  saveJournalSheet,
+  deleteJournalSheet,
+  batchSaveJournalSheets,
 } from "./db.js";
 
 const PORT = Number(process.env.API_PORT) || 8787;
@@ -241,6 +245,32 @@ app.delete("/api/journal/custom-charts/:id", (req, res) => {
 app.post("/api/journal/custom-charts/batch", (req, res) => {
   const list = Array.isArray(req.body) ? req.body : [];
   batchSaveJournalCharts(list);
+  res.json({ ok: true });
+});
+
+// ─── Journal Sheets Endpoints ───
+app.get("/api/journal/sheets", (_req, res) => {
+  res.json(getJournalSheets());
+});
+
+app.post("/api/journal/sheets", (req, res) => {
+  const sheet = req.body;
+  if (!sheet || !sheet.id) {
+    res.status(400).json({ ok: false, message: "Missing sheet data or ID." });
+    return;
+  }
+  saveJournalSheet(sheet);
+  res.json({ ok: true });
+});
+
+app.delete("/api/journal/sheets/:id", (req, res) => {
+  deleteJournalSheet(req.params.id);
+  res.json({ ok: true });
+});
+
+app.post("/api/journal/sheets/batch", (req, res) => {
+  const list = Array.isArray(req.body) ? req.body : [];
+  batchSaveJournalSheets(list);
   res.json({ ok: true });
 });
 

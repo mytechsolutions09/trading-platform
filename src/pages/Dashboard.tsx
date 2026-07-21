@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { TrendingUp, TrendingDown, Activity, Wallet } from "lucide-react";
+import { TrendingUp, TrendingDown, Activity, Wallet, BookOpen } from "lucide-react";
 import { TradingViewChart } from "../components/charts/TradingViewChart";
 import { MarketOverview } from "../components/charts/MarketOverview";
 import { Watchlist } from "../components/trading/Watchlist";
@@ -55,9 +55,15 @@ export function Dashboard() {
             Live TradingView charts · paper trading workspace
           </p>
         </div>
-        <Link to="/trade" className="btn-primary">
-          Open trade desk
-        </Link>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+          <Link to="/journal" className="btn-journal">
+            <BookOpen size={15} strokeWidth={2} />
+            Open Trading Journal
+          </Link>
+          <Link to="/trade" className="btn-primary">
+            Open trade desk
+          </Link>
+        </div>
       </div>
 
       <div className="stats-grid">

@@ -1,5 +1,5 @@
-import { Search, Bell, Wallet } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { Search, Bell, Wallet, BookOpen } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 import { useTrading } from "../../context/TradingContext";
 import { formatPrice } from "../../data/symbols";
 
@@ -65,6 +65,15 @@ export function Header() {
             </span>
           </div>
         </div>
+
+        <Link
+          to="/journal"
+          className="icon-btn journal-header-btn"
+          aria-label="Open Trading Journal"
+          title="Open Trading Journal"
+        >
+          <BookOpen size={18} />
+        </Link>
 
         <button type="button" className="icon-btn" aria-label="Notifications">
           <Bell size={18} />
