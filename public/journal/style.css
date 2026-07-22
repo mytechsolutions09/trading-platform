@@ -162,15 +162,61 @@ body.sidebar-collapsed .capital-card,
   display: none !important;
 }
 
-body.sidebar-collapsed .sidebar-toggle-btn,
-.sidebar.collapsed .sidebar-toggle-btn {
-  margin-left: 0;
-  margin-top: 2px;
+body.sidebar-collapsed .subbar-footer,
+.sidebar.collapsed .subbar-footer {
+  padding: 12px 6px;
+  display: flex;
+  justify-content: center;
 }
 
+body.sidebar-collapsed .subbar-collapse-btn .toggle-icon,
+.sidebar.collapsed .subbar-collapse-btn .toggle-icon,
 body.sidebar-collapsed .sidebar-toggle-btn .toggle-icon,
 .sidebar.collapsed .sidebar-toggle-btn .toggle-icon {
   transform: rotate(180deg);
+}
+
+.subbar-footer {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+
+.subbar-collapse-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text2);
+  font-family: var(--ff-body);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.subbar-collapse-btn:hover {
+  background: var(--card-hover);
+  color: var(--text);
+  border-color: var(--border-hi);
+}
+
+.subbar-collapse-btn .toggle-icon {
+  transition: transform 0.25s ease;
+  flex-shrink: 0;
+}
+
+body.sidebar-collapsed .subbar-collapse-btn,
+.sidebar.collapsed .subbar-collapse-btn {
+  justify-content: center;
+  padding: 10px 0;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto;
 }
 
 body.sidebar-collapsed .subbar-scroll,
@@ -204,40 +250,6 @@ body.sidebar-collapsed .subbar-tab .subbar-icon,
   align-items: center;
   justify-content: center;
   margin: 0;
-}
-
-body.sidebar-collapsed .sidebar-footer,
-.sidebar.collapsed .sidebar-footer {
-  padding: 12px 6px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.sidebar-toggle-btn {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  color: var(--text2);
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  margin-left: auto;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.sidebar-toggle-btn:hover {
-  background: var(--card-hover);
-  color: var(--text);
-  border-color: var(--border-hi);
-}
-
-.sidebar-toggle-btn .toggle-icon {
-  transition: transform 0.25s ease;
 }
 
 /* ── Sidebar Brand ───────────────────────────────────────────────────── */
@@ -1465,7 +1477,209 @@ dialog[open] { animation: dialogIn .2s cubic-bezier(0.34,1.56,0.64,1); }
   body { background: #fff; }
 }
 
-/* ── Psychology Page ─────────────────────────────────────────────────── */
+/* ── Psychology Studio Refactored ───────────────────────────────────── */
+.psych-tab-pills {
+  display: flex;
+  gap: 8px;
+  background: var(--surface2);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.psych-pill-btn {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.psych-pill-btn:hover {
+  color: var(--text);
+  background: rgba(255,255,255,0.05);
+}
+
+.psych-pill-btn.active {
+  background: var(--purple);
+  color: #ffffff;
+  box-shadow: 0 0 12px var(--purple-glow);
+}
+
+.psych-tab-panel {
+  display: none;
+}
+
+.psych-tab-panel.active {
+  display: block;
+  animation: pageIn 0.25s ease-out;
+}
+
+.psych-card {
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+
+.psych-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 600px) {
+  .psych-form-grid { grid-template-columns: 1fr; }
+}
+
+.range-display-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.range-display-wrap input[type="range"] {
+  flex: 1;
+  accent-color: var(--purple-l);
+}
+
+.range-val {
+  font-family: var(--ff-head);
+  font-weight: 700;
+  color: var(--purple-l);
+  min-width: 24px;
+  text-align: right;
+}
+
+.emotion-grid-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.psych-emotion-chip {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  padding: 6px 12px;
+  border-radius: 99px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.psych-emotion-chip:hover,
+.psych-emotion-chip.selected {
+  background: rgba(168, 85, 247, 0.15);
+  border-color: var(--purple-l);
+  color: #ffffff;
+}
+
+.psych-score-circle {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 4px solid var(--green);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
+}
+
+.psych-score-circle span {
+  font-family: var(--ff-head);
+  font-size: 2.4rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text);
+}
+
+.psych-score-circle small {
+  font-size: 0.7rem;
+  color: var(--text3);
+}
+
+.psych-rules-checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.psych-rules-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: var(--text2);
+}
+
+.tilt-alert-box {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.tilt-alert-title {
+  font-weight: 700;
+  color: var(--red);
+  font-size: 0.9rem;
+}
+
+.timer-display {
+  font-family: var(--ff-head);
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--amber);
+  text-align: center;
+  margin-top: 12px;
+  letter-spacing: 0.1em;
+}
+
+.tilt-bar-bg {
+  height: 8px;
+  background: var(--surface2);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.tilt-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--amber), var(--red));
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+
+.cognitive-bias-card {
+  background: var(--surface2);
+  border-left: 3px solid var(--purple-l);
+  padding: 12px 16px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.psych-rule-item {
+  padding: 10px 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  color: var(--text2);
+}
+
 .psych-score-ring {
   width: 100px; height: 100px;
   border-radius: 50%;

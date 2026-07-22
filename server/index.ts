@@ -27,6 +27,9 @@ import {
   saveJournalChart,
   deleteJournalChart,
   batchSaveJournalCharts,
+  getPsychLogs,
+  savePsychLog,
+  batchSavePsychLogs,
   getJournalSheets,
   saveJournalSheet,
   deleteJournalSheet,
@@ -245,6 +248,27 @@ app.delete("/api/journal/custom-charts/:id", (req, res) => {
 app.post("/api/journal/custom-charts/batch", (req, res) => {
   const list = Array.isArray(req.body) ? req.body : [];
   batchSaveJournalCharts(list);
+  res.json({ ok: true });
+});
+
+// ─── Psychology Mindset Logs Endpoints ───
+app.get("/api/journal/psych-logs", (_req, res) => {
+  res.json(getPsychLogs());
+});
+
+app.post("/api/journal/psych-logs", (req, res) => {
+  const log = req.body;
+  if (!log || !log.date) {
+    res.status(400).json({ ok: false, message: "Missing log date." });
+    return;
+  }
+  savePsychLog(log);
+  res.json({ ok: true });
+});
+
+app.post("/api/journal/psych-logs/batch", (req, res) => {
+  const list = Array.isArray(req.body) ? req.body : [];
+  batchSavePsychLogs(list);
   res.json({ ok: true });
 });
 

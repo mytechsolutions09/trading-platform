@@ -204,6 +204,18 @@ export function initDb() {
       content TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS journal_psych_logs (
+      date TEXT PRIMARY KEY,
+      energy INTEGER NOT NULL,
+      focus INTEGER NOT NULL,
+      sleep INTEGER NOT NULL,
+      stress INTEGER NOT NULL,
+      emotion TEXT,
+      mantra TEXT,
+      notes TEXT,
+      timestamp INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS journal_charts (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -1003,13 +1015,80 @@ export function batchSaveJournalSheets(list: DbJournalSheet[]) {
       ?, ?, ?, ?, ?, ?, ?
     )
   `);
+
   runInTransaction(() => {
-    list.forEach(s => {
+    list.forEach((s) => {
       insert.run(
         s.id, s.date, s.tradeNo || null, s.market || null, s.time || null, s.account || null, s.accountSize ? Number(s.accountSize) : null, s.riskPct ? Number(s.riskPct) : null, s.resultR || null, s.netPnl ? Number(s.netPnl) : null,
         s.asset || null, s.timeframe || null, s.direction || null, s.setup || null, s.entryReason || null, s.entryPrice ? Number(s.entryPrice) : null, s.entryTime || null, s.stopLoss ? Number(s.stopLoss) : null, s.tp1 ? Number(s.tp1) : null, s.tp2 ? Number(s.tp2) : null,
         s.positionSize ? Number(s.positionSize) : null, s.riskAmt ? Number(s.riskAmt) : null, s.riskR || null, s.exitPrice ? Number(s.exitPrice) : null, s.exitTime || null, s.result || null, s.rMultiple || null, s.pnlAmt ? Number(s.pnlAmt) : null, s.pnlPct || null,
         s.emotion || null, s.emotionOther || null, s.chartImg || null, s.reviewWell || null, s.reviewBad || null, s.reviewLessons || null, s.createdAt || new Date().toISOString()
+      );
+    });
+  });
+}
+
+export interface DbPsychLog {
+  date: string;
+  energy: number;
+  focus: number;
+  sleep: number;
+  stress: number;
+  emotion?: string;
+  mantra?: string;
+  notes?: string;
+  timestamp: number;
+}
+
+export function getPsychLogs(): DbPsychLog[] {
+  return db.prepare("SELECT * FROM journal_psych_logs ORDER BY date DESC").all() as DbPsychLog[];
+}
+
+export function savePsychLog(log: DbPsychLog) {
+  db.prepare(`
+    INSERT INTO journal_psych_logs (date, energy, focus, sleep, stress, emotion, mantra, notes, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(date) DO UPDATE SET
+      energy=excluded.energy,
+      focus=excluded.focus,
+      sleep=excluded.sleep,
+      stress=excluded.stress,
+      emotion=excluded.emotion,
+      mantra=excluded.mantra,
+      notes=excluded.notes,
+      timestamp=excluded.timestamp
+  `).run(
+    log.date,
+    log.energy,
+    log.focus,
+    log.sleep,
+    log.stress,
+    log.emotion || null,
+    log.mantra || null,
+    log.notes || null,
+    log.timestamp || Date.now()
+  );
+}
+
+export function batchSavePsychLogs(list: DbPsychLog[]) {
+  db.prepare("DELETE FROM journal_psych_logs").run();
+  const insert = db.prepare(`
+    INSERT INTO journal_psych_logs (date, energy, focus, sleep, stress, emotion, mantra, notes, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  runInTransaction(() => {
+    list.forEach((log) => {
+      insert.run(
+        log.date,
+        log.energy,
+        log.focus,
+        log.sleep,
+        log.stress,
+        log.emotion || null,
+        log.mantra || null,
+        log.notes || null,
+        log.timestamp || Date.now()
       );
     });
   });

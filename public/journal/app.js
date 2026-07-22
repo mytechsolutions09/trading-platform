@@ -52,6 +52,15 @@ function saveSheets() {
   }).catch(() => undefined);
 }
 
+function savePsychLogs(psychLogs) {
+  LS.set('tj_psych_logs', psychLogs);
+  fetch('/api/journal/psych-logs/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(psychLogs),
+  }).catch(() => undefined);
+}
+
 function saveSettings() { LS.set('tj_settings', settings); }
 
 function applyTheme(newTheme) {
@@ -611,27 +620,23 @@ function renderAnalytics(el) {
 function renderPsychology(el) {
   const closed = trades.filter(t => t.exitPrice);
 
-  // Emotion distribution
+  // ── Stats & Calculations ──
   const emotionCount = {};
   EMOTIONS.forEach(e => emotionCount[e.key] = 0);
   closed.forEach(t => { if (t.emotion) emotionCount[t.emotion] = (emotionCount[t.emotion] || 0) + 1; });
 
-  // Emotion avg P&L
   const emotionPnl = {};
   EMOTIONS.forEach(e => emotionPnl[e.key] = []);
   closed.forEach(t => { if (t.emotion) emotionPnl[t.emotion].push(calcPnl(t)); });
 
-  // Scatter data
   const scatterData = closed.filter(t => t.emotion).map(t => ({ id: t.id, emotion: t.emotion, pnl: calcPnl(t) }));
 
-  // Mindset trend
   const mindsetPts = closed.filter(t => t.mindsetScore && t.date)
     .sort((a,b) => new Date(a.date) - new Date(b.date))
     .map(t => ({ date: t.date, value: parseFloat(t.mindsetScore) }));
 
   const avgMindset = mindsetPts.length ? (mindsetPts.reduce((a,p) => a+p.value, 0) / mindsetPts.length) : 0;
 
-  // Rule violations
   const violations = {};
   RULE_VIOLATIONS.forEach(r => violations[r] = 0);
   closed.forEach(t => { (t.ruleViolations || []).forEach(r => { violations[r] = (violations[r] || 0) + 1; }); });
@@ -640,7 +645,6 @@ function renderPsychology(el) {
   const disciplineScore = totalPossible > 0 ? Math.max(0, Math.round((1 - totalViolations / totalPossible) * 100)) : 100;
   const discPct = disciplineScore + '%';
 
-  // Emotion win rates
   const emotionWinRate = {};
   EMOTIONS.forEach(e => {
     const pts = emotionPnl[e.key];
@@ -649,106 +653,552 @@ function renderPsychology(el) {
 
   const maxEmotionCount = Math.max(...Object.values(emotionCount), 1);
 
+  // Psychology persistent logs
+  let psychLogs = LS.get('tj_psych_logs', []);
+  let activeTab = LS.get('tj_psych_tab', 'checkin');
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayCheckin = psychLogs.find(l => l.date === todayStr);
+
   el.innerHTML = `
-    <div class="page-header">
+    <div class="page-header justify-between items-center" style="display:flex;flex-wrap:wrap;gap:16px;">
       <div>
-        <h1 class="page-title">Psychology</h1>
-        <p class="page-subtitle">Your mental edge — emotion tracking & discipline analysis</p>
+        <h1 class="page-title">Mindset & Psychology Studio</h1>
+        <p class="page-subtitle">Master emotional discipline, prevent tilt, audit rule adherence, and track psychological readiness</p>
+      </div>
+      <div class="psych-tab-pills">
+        <button class="psych-pill-btn ${activeTab==='checkin'?'active':''}" data-psych-tab="checkin">Daily Readiness Check</button>
+        <button class="psych-pill-btn ${activeTab==='analytics'?'active':''}" data-psych-tab="analytics">State Analytics</button>
+        <button class="psych-pill-btn ${activeTab==='tilt'?'active':''}" data-psych-tab="tilt">Tilt & Risk Control</button>
+        <button class="psych-pill-btn ${activeTab==='reflections'?'active':''}" data-psych-tab="reflections">Mindset Log</button>
       </div>
     </div>
-    <div class="page-content">
 
-      <!-- Discipline + Mindset KPIs -->
-      <div class="grid-3">
-        <div class="card">
-          <div class="card-header"><span class="card-title">Discipline Score</span></div>
-          <div class="card-body flex-center" style="flex-direction:column;gap:12px;padding-top:20px;">
-            <div class="discipline-ring" style="--pct:${discPct}">
-              <div class="discipline-inner">
-                <div style="font-family:var(--ff-head);font-size:1.6rem;font-weight:800;color:${disciplineScore>=70?'var(--cyan)':disciplineScore>=40?'var(--amber)':'var(--red)'};">${disciplineScore}</div>
-                <div style="font-size:0.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;">/ 100</div>
+    <div class="page-content mt-16">
+      <!-- SECTION 1: DAILY READINESS CHECK-IN -->
+      <div class="psych-tab-panel ${activeTab==='checkin'?'active':''}" id="psych-panel-checkin">
+        <div class="grid-2-1" style="display:grid;grid-template-columns: 2fr 1fr;gap:20px;">
+          
+          <div class="card psych-card">
+            <div class="card-header justify-between items-center">
+              <span class="card-title">Pre-Session Mental Readiness Check-in</span>
+              <span class="badge" style="background:var(--surface2);color:var(--purple-l);">${todayStr}</span>
+            </div>
+            <div class="card-body">
+              <form id="psych-checkin-form">
+                <div class="psych-form-grid">
+                  <div class="form-group">
+                    <label>Energy Level (1-10)</label>
+                    <div class="range-display-wrap">
+                      <input type="range" id="psych-energy" min="1" max="10" value="${todayCheckin?.energy || 7}">
+                      <span class="range-val" id="psych-energy-val">${todayCheckin?.energy || 7}</span>
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label>Focus & Clarity (1-10)</label>
+                    <div class="range-display-wrap">
+                      <input type="range" id="psych-focus" min="1" max="10" value="${todayCheckin?.focus || 8}">
+                      <span class="range-val" id="psych-focus-val">${todayCheckin?.focus || 8}</span>
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label>Sleep Quality (Hours/10)</label>
+                    <div class="range-display-wrap">
+                      <input type="range" id="psych-sleep" min="1" max="10" value="${todayCheckin?.sleep || 7}">
+                      <span class="range-val" id="psych-sleep-val">${todayCheckin?.sleep || 7}</span>
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label>Stress Level (1-10, lower is better)</label>
+                    <div class="range-display-wrap">
+                      <input type="range" id="psych-stress" min="1" max="10" value="${todayCheckin?.stress || 3}">
+                      <span class="range-val" id="psych-stress-val">${todayCheckin?.stress || 3}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-group mt-16">
+                  <label>Current Dominant Emotion / Mood</label>
+                  <div class="emotion-grid-select">
+                    ${EMOTIONS.map(e => `
+                      <button type="button" class="psych-emotion-chip ${(todayCheckin?.emotion || 'Calm')===e.key?'selected':''}" data-emotion="${e.key}">
+                        ${e.key}
+                      </button>
+                    `).join('')}
+                  </div>
+                </div>
+
+                <div class="form-group mt-16">
+                  <label>Primary Focus / Mantra for Today</label>
+                  <input type="text" id="psych-mantra" placeholder="e.g., Wait for key levels, stick to 1% risk max, no revenge trading..." value="${todayCheckin?.mantra || ''}">
+                </div>
+
+                <div class="form-group mt-16">
+                  <label>Pre-Market Mindset Notes</label>
+                  <textarea id="psych-notes" rows="3" placeholder="Any personal stresses, market context, or rules to keep front of mind today...">${todayCheckin?.notes || ''}</textarea>
+                </div>
+
+                <button type="submit" class="btn btn-primary mt-16" style="width:100%;">
+                  Save Daily Readiness Check
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:20px;">
+            <div class="card psych-card">
+              <div class="card-header"><span class="card-title">Readiness Index</span></div>
+              <div class="card-body flex-center" style="flex-direction:column;padding:24px 16px;text-align:center;">
+                <div class="psych-score-circle" id="psych-readiness-circle">
+                  <span id="psych-readiness-score">--</span>
+                  <small>/100</small>
+                </div>
+                <div id="psych-readiness-status" style="margin-top:12px;font-weight:700;font-size:0.95rem;color:var(--purple-l);">
+                  Log check-in to compute status
+                </div>
+                <p style="font-size:0.75rem;color:var(--text3);margin-top:6px;">Calculated from Energy, Focus, Sleep, & Stress</p>
               </div>
             </div>
-            <div style="font-size:0.8rem;color:var(--text3);text-align:center;">${totalViolations} violations across ${closed.length} trades</div>
+
+            <div class="card psych-card">
+              <div class="card-header"><span class="card-title">Golden Trading Rules</span></div>
+              <div class="card-body">
+                <ul class="psych-rules-checklist">
+                  <li><input type="checkbox" id="rule1"> <label for="rule1">I will not risk > 2% per trade</label></li>
+                  <li><input type="checkbox" id="rule2"> <label for="rule2">I will wait for high-probability setups</label></li>
+                  <li><input type="checkbox" id="rule3"> <label for="rule3">I will respect my pre-defined stop loss</label></li>
+                  <li><input type="checkbox" id="rule4"> <label for="rule4">I will stop trading if down 3 consecutive trades</label></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- SECTION 2: ENHANCED STATE ANALYTICS & PSYCH MATRIX -->
+      <div class="psych-tab-panel ${activeTab==='analytics'?'active':''}" id="psych-panel-analytics">
+        
+        <!-- Top Level Psychological KPIs -->
+        <div class="grid-4">
+          <div class="card psych-card">
+            <div class="card-header"><span class="card-title">Discipline Score</span></div>
+            <div class="card-body flex-center" style="flex-direction:column;gap:8px;padding-top:16px;">
+              <div class="discipline-ring" style="--pct:${discPct}">
+                <div class="discipline-inner">
+                  <div style="font-family:var(--ff-head);font-size:1.5rem;font-weight:800;color:${disciplineScore>=70?'var(--cyan)':disciplineScore>=40?'var(--amber)':'var(--red)'};">${disciplineScore}</div>
+                  <div style="font-size:0.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;">/ 100</div>
+                </div>
+              </div>
+              <div style="font-size:0.75rem;color:var(--text3);text-align:center;">${totalViolations} violations across ${closed.length} trades</div>
+            </div>
+          </div>
+
+          <div class="card psych-card">
+            <div class="card-header"><span class="card-title">Optimal Mindset Win Rate</span></div>
+            <div class="card-body flex-center" style="flex-direction:column;gap:6px;padding-top:16px;">
+              ${(() => {
+                const highMindsetTrades = closed.filter(t => parseFloat(t.mindsetScore || 0) >= 7);
+                const highWins = highMindsetTrades.filter(t => calcPnl(t) > 0).length;
+                const highWr = highMindsetTrades.length ? Math.round((highWins / highMindsetTrades.length) * 100) : 0;
+                return `
+                  <div style="font-family:var(--ff-head);font-size:2.4rem;font-weight:800;color:var(--green);">${highWr}%</div>
+                  <div style="font-size:0.75rem;color:var(--text3);">${highMindsetTrades.length} trades with Mindset >= 7</div>
+                `;
+              })()}
+            </div>
+          </div>
+
+          <div class="card psych-card">
+            <div class="card-header"><span class="card-title">Revenge Trade Count</span></div>
+            <div class="card-body flex-center" style="flex-direction:column;gap:6px;padding-top:16px;">
+              ${(() => {
+                const revengeTrades = closed.filter(t => (t.ruleViolations || []).includes('Took revenge trade') || t.emotion === 'Frustrated');
+                const revengeLoss = revengeTrades.reduce((acc, t) => acc + calcPnl(t), 0);
+                return `
+                  <div style="font-family:var(--ff-head);font-size:2.4rem;font-weight:800;color:${revengeTrades.length>0?'var(--red)':'var(--green)'};">${revengeTrades.length}</div>
+                  <div style="font-size:0.75rem;color:${revengeLoss < 0 ? 'var(--red)' : 'var(--text3)'};">Impact: ${fmtCurr(revengeLoss, true)}</div>
+                `;
+              })()}
+            </div>
+          </div>
+
+          <div class="card psych-card">
+            <div class="card-header"><span class="card-title">Avg Mindset Rating</span></div>
+            <div class="card-body flex-center" style="flex-direction:column;gap:6px;padding-top:16px;">
+              <div style="font-family:var(--ff-head);font-size:2.4rem;font-weight:800;color:${avgMindset>=7?'var(--green)':avgMindset>=4?'var(--amber)':'var(--red)'};">${avgMindset.toFixed(1)}<span style="font-size:0.9rem;color:var(--text3)">/10</span></div>
+              <div style="font-size:0.75rem;color:var(--text3);">${mindsetPts.length} rated trades</div>
+            </div>
           </div>
         </div>
-        <div class="card">
-          <div class="card-header"><span class="card-title">Avg Mindset Score</span></div>
-          <div class="card-body flex-center" style="flex-direction:column;gap:8px;padding-top:20px;">
-            <div style="font-family:var(--ff-head);font-size:3rem;font-weight:800;color:${avgMindset>=7?'var(--green)':avgMindset>=4?'var(--amber)':'var(--red)'};">${avgMindset.toFixed(1)}<span style="font-size:1rem;color:var(--text3)">/10</span></div>
-            <div style="font-size:0.8rem;color:var(--text3);">${mindsetPts.length} trades rated</div>
+
+        <!-- Emotion Expectancy & Performance Matrix -->
+        <div class="card psych-card mt-24">
+          <div class="card-header justify-between items-center">
+            <span class="card-title">Psychological Performance & Expectancy Matrix</span>
+            <span class="badge" style="background:var(--surface2);color:var(--text2);font-size:0.7rem;">Real-time Expected Value by State</span>
           </div>
-        </div>
-        <div class="card">
-          <div class="card-header"><span class="card-title">Emotion Distribution</span></div>
           <div class="card-body">
-            <div class="emotion-summary">
-              ${EMOTIONS.map(e => `
-                <div class="emotion-row">
-                  <span style="min-width:80px;color:${e.color};font-size:.8rem;font-weight:600;">${e.icon} ${e.key}</span>
-                  <div class="emotion-bar-track">
-                    <div class="emotion-bar-fill" style="width:${(emotionCount[e.key]/maxEmotionCount*100).toFixed(0)}%;background:${e.color};"></div>
-                  </div>
-                  <span style="min-width:20px;text-align:right;font-size:.75rem;color:var(--text3);">${emotionCount[e.key]}</span>
-                </div>`).join('')}
+            <div class="table-responsive">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Emotional State</th>
+                    <th>Trade Count</th>
+                    <th>Win Rate</th>
+                    <th>Avg Win</th>
+                    <th>Avg Loss</th>
+                    <th>Expectancy / Trade</th>
+                    <th>Total State P&L</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${EMOTIONS.map(e => {
+                    const pts = emotionPnl[e.key];
+                    const cnt = pts.length;
+                    if (!cnt) return `
+                      <tr>
+                        <td><strong style="color:${e.color};">${e.key}</strong></td>
+                        <td>0</td>
+                        <td>—</td>
+                        <td>—</td>
+                        <td>—</td>
+                        <td>—</td>
+                        <td>—</td>
+                      </tr>
+                    `;
+                    const wins = pts.filter(p => p > 0);
+                    const losses = pts.filter(p => p < 0);
+                    const wr = (wins.length / cnt);
+                    const avgW = wins.length ? wins.reduce((a,b)=>a+b,0)/wins.length : 0;
+                    const avgL = losses.length ? Math.abs(losses.reduce((a,b)=>a+b,0)/losses.length) : 0;
+                    const expectancy = (wr * avgW) - ((1 - wr) * avgL);
+                    const totalStatePnl = pts.reduce((a,b)=>a+b,0);
+
+                    return `
+                      <tr>
+                        <td><strong style="color:${e.color};">${e.key}</strong></td>
+                        <td>${cnt}</td>
+                        <td><span class="badge" style="background:rgba(255,255,255,0.05);color:${wr>=0.5?'var(--green)':'var(--red)'};">${(wr*100).toFixed(0)}%</span></td>
+                        <td style="color:var(--green);">${fmtCurr(avgW)}</td>
+                        <td style="color:var(--red);">${avgL > 0 ? '-' + fmtCurr(avgL) : '$0.00'}</td>
+                        <td><strong style="color:${expectancy>=0?'var(--green)':'var(--red)'};">${fmtCurr(expectancy, true)}</strong></td>
+                        <td><strong style="color:${totalStatePnl>=0?'var(--green)':'var(--red)'};">${fmtCurr(totalStatePnl, true)}</strong></td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2 mt-24">
+          <div class="card psych-card">
+            <div class="card-header"><span class="card-title">Emotion vs P&L Impact</span></div>
+            <div class="card-body"><canvas id="ps-scatter" class="chart chart-lg"></canvas></div>
+          </div>
+          <div class="card psych-card">
+            <div class="card-header"><span class="card-title">Pre-Trade Mindset Trend</span></div>
+            <div class="card-body"><canvas id="ps-mindset" class="chart chart-lg"></canvas></div>
+          </div>
+        </div>
+
+        <div class="grid-2 mt-24">
+          <div class="card psych-card">
+            <div class="card-header"><span class="card-title">Rule Violation Frequency</span></div>
+            <div class="card-body" style="height:${Math.max(240, RULE_VIOLATIONS.length * 36 + 32)}px;position:relative;">
+              <canvas id="ps-violations" class="chart" style="height:${Math.max(220, RULE_VIOLATIONS.length * 36)}px;"></canvas>
+            </div>
+          </div>
+          <div class="card psych-card">
+            <div class="card-header"><span class="card-title">State Share & Volume Distribution</span></div>
+            <div class="card-body">
+              <div class="emotion-summary">
+                ${EMOTIONS.map(e => `
+                  <div class="emotion-row">
+                    <span style="min-width:90px;color:${e.color};font-size:.8rem;font-weight:600;">${e.key}</span>
+                    <div class="emotion-bar-track">
+                      <div class="emotion-bar-fill" style="width:${(emotionCount[e.key]/maxEmotionCount*100).toFixed(0)}%;background:${e.color};"></div>
+                    </div>
+                    <span style="min-width:24px;text-align:right;font-size:.75rem;color:var(--text3);">${emotionCount[e.key]}</span>
+                  </div>`).join('')}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Scatter + Mindset Trend -->
-      <div class="grid-2 mt-24">
-        <div class="card">
-          <div class="card-header"><span class="card-title">Emotion vs P&L</span></div>
-          <div class="card-body"><canvas id="ps-scatter" class="chart chart-lg"></canvas></div>
-        </div>
-        <div class="card">
-          <div class="card-header"><span class="card-title">Mindset Score Trend</span></div>
-          <div class="card-body"><canvas id="ps-mindset" class="chart chart-lg"></canvas></div>
-        </div>
-      </div>
+      <!-- SECTION 3: TILT PROTECTION & RISK CONTROLS -->
+      <div class="psych-tab-panel ${activeTab==='tilt'?'active':''}" id="psych-panel-tilt">
+        <div class="grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+          <div class="card psych-card">
+            <div class="card-header"><span class="card-title">Circuit Breakers & Anti-Tilt System</span></div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:16px;">
+              <div class="tilt-alert-box">
+                <div class="tilt-alert-title">Emergency Breathing Protocol</div>
+                <p style="font-size:0.8rem;color:var(--text2);margin-top:4px;">
+                  If you lost 2 consecutive trades or feel urge to revenge trade, pause 3 minutes.
+                </p>
+                <button type="button" class="btn btn-secondary mt-12" id="psych-timer-btn" style="width:100%;">
+                  Start 3-Minute Cool Down Timer
+                </button>
+                <div id="psych-timer-display" class="timer-display hidden">03:00</div>
+              </div>
 
-      <!-- Rule Violations + Emotion Win Rates -->
-      <div class="grid-2 mt-24">
-        <div class="card">
-          <div class="card-header"><span class="card-title">Rule Violations</span></div>
-          <div class="card-body" style="height:${Math.max(240, RULE_VIOLATIONS.length * 36 + 32)}px;position:relative;">
-            <canvas id="ps-violations" class="chart" style="height:${Math.max(220, RULE_VIOLATIONS.length * 36)}px;"></canvas>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-header"><span class="card-title">Emotion Win Rates</span></div>
-          <div class="card-body">
-            ${EMOTIONS.map(e => {
-              const wr = emotionWinRate[e.key];
-              const cnt = emotionPnl[e.key].length;
-              if (!cnt) return `<div class="emotion-row" style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);">
-                <span style="min-width:100px;color:${e.color};font-size:.82rem;">${e.icon} ${e.key}</span>
-                <span style="font-size:.75rem;color:var(--text3);">No data</span>
-              </div>`;
-              const avg  = emotionPnl[e.key].reduce((a,b)=>a+b,0) / cnt;
-              return `<div class="emotion-row" style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);">
-                <span style="min-width:100px;color:${e.color};font-size:.82rem;">${e.icon} ${e.key}</span>
-                <div style="flex:1;display:flex;align-items:center;gap:8px;">
-                  <div style="height:4px;flex:1;background:rgba(255,255,255,.06);border-radius:99px;overflow:hidden;">
-                    <div style="height:100%;width:${(wr*100).toFixed(0)}%;background:${e.color};border-radius:99px;"></div>
-                  </div>
-                  <span style="font-size:.75rem;min-width:32px;text-align:right;color:${e.color};">${(wr*100).toFixed(0)}%</span>
+              <div class="psych-tilt-indicator">
+                <div style="font-weight:600;font-size:0.85rem;color:var(--text);">Tilt Vulnerability Meter</div>
+                <div class="tilt-bar-bg mt-8">
+                  <div class="tilt-bar-fill" id="tilt-bar-level" style="width:${Math.min(100, (totalViolations * 20))}%"></div>
                 </div>
-                <span style="min-width:70px;text-align:right;font-size:.75rem;color:${avg>=0?'var(--green)':'var(--red)'};">${fmtCurr(avg,true)}</span>
-              </div>`;
-            }).join('')}
+                <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text3);margin-top:4px;">
+                  <span>Zen / Focused</span>
+                  <span>Moderate Risk</span>
+                  <span style="color:var(--red);">High Tilt Danger</span>
+                </div>
+              </div>
+
+              <div class="cognitive-bias-card mt-8">
+                <div style="font-weight:700;font-size:0.85rem;color:var(--purple-l);">Cognitive Bias Antidote</div>
+                <p style="font-size:0.8rem;color:var(--text2);margin-top:6px;">
+                  <strong>Gambler's Fallacy:</strong> Past losses do not increase the probability of your next trade winning. Evaluate every setup independently on its edge.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card psych-card">
+            <div class="card-header"><span class="card-title">Trading Rules & Discipline Standard</span></div>
+            <div class="card-body">
+              <div class="psych-rule-editor">
+                <p style="font-size:0.8rem;color:var(--text3);margin-bottom:12px;">Add personal psychological rules to enforce during every trading session:</p>
+                <div id="psych-rules-list">
+                  <div class="psych-rule-item">1. Never move stop-loss further away once filled</div>
+                  <div class="psych-rule-item">2. Max 3 trades per day regardless of market opportunities</div>
+                  <div class="psych-rule-item">3. No trading within 15 minutes of high-impact FOMC/CPI news</div>
+                  <div class="psych-rule-item">4. Close positions completely when daily profit target of 3R is reached</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>`;
 
+      <!-- SECTION 4: MINDSET LOG HISTORY -->
+      <div class="psych-tab-panel ${activeTab==='reflections'?'active':''}" id="psych-panel-reflections">
+        <div class="card psych-card">
+          <div class="card-header justify-between items-center">
+            <span class="card-title">Psychological Readiness & Mindset Journal Logs</span>
+            <button class="btn btn-sm btn-secondary" id="psych-export-btn">Export Mindset History</button>
+          </div>
+          <div class="card-body">
+            ${psychLogs.length === 0 ? `
+              <div class="empty-state">
+                <div class="empty-title">No Daily Check-ins Logged Yet</div>
+                <div class="empty-sub">Use the "Daily Readiness Check" tab to record your daily mental state before market open.</div>
+              </div>
+            ` : `
+              <div class="table-responsive">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Emotion</th>
+                      <th>Energy</th>
+                      <th>Focus</th>
+                      <th>Sleep</th>
+                      <th>Stress</th>
+                      <th>Readiness</th>
+                      <th>Mantra / Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${psychLogs.map(l => {
+                      const score = Math.round(((parseInt(l.energy||7)*10 + parseInt(l.focus||8)*10 + parseInt(l.sleep||7)*10 + (11 - parseInt(l.stress||3))*10) / 40) * 10);
+                      return `
+                        <tr>
+                          <td><strong>${l.date}</strong></td>
+                          <td><span class="chip">${l.emotion || 'Calm'}</span></td>
+                          <td>${l.energy}/10</td>
+                          <td>${l.focus}/10</td>
+                          <td>${l.sleep}h</td>
+                          <td>${l.stress}/10</td>
+                          <td><span class="badge" style="background:${score>=70?'var(--green-glow)':'var(--amber-glow)'};color:${score>=70?'var(--green)':'var(--amber)'};">${score}%</span></td>
+                          <td style="max-width:250px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${l.mantra || ''} ${l.notes || ''}">
+                            <em>${l.mantra || l.notes || '—'}</em>
+                          </td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // ── Event Handlers & Dynamic Binding ──
+
+  // Tab switching
+  el.querySelectorAll('.psych-pill-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.getAttribute('data-psych-tab');
+      LS.set('tj_psych_tab', tab);
+      el.querySelectorAll('.psych-pill-btn').forEach(b => b.classList.remove('active'));
+      el.querySelectorAll('.psych-tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      const panel = el.querySelector(`#psych-panel-${tab}`);
+      if (panel) panel.classList.add('active');
+
+      if (tab === 'analytics') {
+        updateCharts();
+      }
+    });
+  });
+
+  // Range slider display synchronization
+  ['energy', 'focus', 'sleep', 'stress'].forEach(field => {
+    const slider = el.querySelector(`#psych-${field}`);
+    const display = el.querySelector(`#psych-${field}-val`);
+    if (slider && display) {
+      slider.addEventListener('input', () => {
+        display.textContent = slider.value;
+        updateReadinessScore();
+      });
+    }
+  });
+
+  // Emotion chip selection
+  let selectedEmotion = todayCheckin?.emotion || 'Calm';
+  el.querySelectorAll('.psych-emotion-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      el.querySelectorAll('.psych-emotion-chip').forEach(c => c.classList.remove('selected'));
+      chip.classList.add('selected');
+      selectedEmotion = chip.getAttribute('data-emotion');
+    });
+  });
+
+  // Calculate Readiness Score Index
+  function updateReadinessScore() {
+    const energy = parseInt(el.querySelector('#psych-energy')?.value || 7);
+    const focus = parseInt(el.querySelector('#psych-focus')?.value || 8);
+    const sleep = parseInt(el.querySelector('#psych-sleep')?.value || 7);
+    const stress = parseInt(el.querySelector('#psych-stress')?.value || 3);
+
+    // Stress inverted (10 - stress)
+    const rawScore = ((energy + focus + sleep + (11 - stress)) / 40) * 100;
+    const score = Math.round(rawScore);
+
+    const scoreEl = el.querySelector('#psych-readiness-score');
+    const statusEl = el.querySelector('#psych-readiness-status');
+    const circleEl = el.querySelector('#psych-readiness-circle');
+
+    if (scoreEl) scoreEl.textContent = score;
+
+    let statusText = 'Optimal Readiness';
+    let color = 'var(--green)';
+    if (score < 50) {
+      statusText = '⚠️ High Risk / Fatigue — Caution';
+      color = 'var(--red)';
+    } else if (score < 75) {
+      statusText = '⚡ Moderate State — Stay Disciplined';
+      color = 'var(--amber)';
+    }
+
+    if (statusEl) {
+      statusEl.textContent = statusText;
+      statusEl.style.color = color;
+    }
+    if (circleEl) {
+      circleEl.style.borderColor = color;
+    }
+  }
+  updateReadinessScore();
+
+  // Handle Form Submit
+  const checkinForm = el.querySelector('#psych-checkin-form');
+  if (checkinForm) {
+    checkinForm.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const newEntry = {
+        date: todayStr,
+        energy: el.querySelector('#psych-energy').value,
+        focus: el.querySelector('#psych-focus').value,
+        sleep: el.querySelector('#psych-sleep').value,
+        stress: el.querySelector('#psych-stress').value,
+        emotion: selectedEmotion,
+        mantra: el.querySelector('#psych-mantra').value.trim(),
+        notes: el.querySelector('#psych-notes').value.trim(),
+        timestamp: Date.now()
+      };
+
+      const existingIdx = psychLogs.findIndex(l => l.date === todayStr);
+      if (existingIdx >= 0) {
+        psychLogs[existingIdx] = newEntry;
+      } else {
+        psychLogs.unshift(newEntry);
+      }
+
+      savePsychLogs(psychLogs);
+      if (typeof showToast === 'function') showToast('Mental readiness check saved successfully!', 'success');
+      renderPsychology(el);
+    });
+  }
+
+  // Cool down 3 min timer
+  const timerBtn = el.querySelector('#psych-timer-btn');
+  const timerDisplay = el.querySelector('#psych-timer-display');
+  let timerInterval = null;
+
+  if (timerBtn && timerDisplay) {
+    timerBtn.addEventListener('click', () => {
+      let seconds = 180;
+      timerBtn.disabled = true;
+      timerDisplay.classList.remove('hidden');
+
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        seconds--;
+        const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+        const s = (seconds % 60).toString().padStart(2, '0');
+        timerDisplay.textContent = `${m}:${s}`;
+
+        if (seconds <= 0) {
+          clearInterval(timerInterval);
+          timerDisplay.textContent = '✅ Session complete! Deep breath.';
+          timerBtn.disabled = false;
+        }
+      }, 1000);
+    });
+  }
+
+  // Export mindset log
+  const exportBtn = el.querySelector('#psych-export-btn');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(psychLogs, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `mindset-log-${todayStr}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    });
+  }
+
+  // Initialize Canvas Charts
   requestAnimationFrame(() => {
     const scatter          = el.querySelector('#ps-scatter');
     const mindset          = el.querySelector('#ps-mindset');
     const violationsCanvas = el.querySelector('#ps-violations');
-    if (scatter)    TJCharts.scatterChart(scatter, scatterData);
-    if (mindset)    TJCharts.lineTrend(mindset, mindsetPts);
+    if (scatter)          TJCharts.scatterChart(scatter, scatterData);
+    if (mindset)          TJCharts.lineTrend(mindset, mindsetPts);
     if (violationsCanvas) TJCharts.hBarChart(violationsCanvas, RULE_VIOLATIONS, RULE_VIOLATIONS.map(r => violations[r]));
   });
 }
@@ -2081,7 +2531,7 @@ let currentZoomScale = 1;
 
 function openChartZoomModal(id) {
   const custom = LS.get('tj_custom_charts', []);
-  const allCharts = [...EDUCATIONAL_CHARTS, ...custom];
+  const allCharts = custom;
   const chart = allCharts.find(c => c.id === id);
   if (!chart) return;
 
@@ -2125,7 +2575,7 @@ function resetZoom() {
 
 function openChartModal(id) {
   const custom = LS.get('tj_custom_charts', []);
-  const allCharts = [...EDUCATIONAL_CHARTS, ...custom];
+  const allCharts = custom;
   const chart = allCharts.find(c => c.id === id);
   if (!chart) return;
 
