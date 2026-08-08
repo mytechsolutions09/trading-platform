@@ -19,15 +19,231 @@ function getAppTheme() {
   } catch {}
   return localStorage.getItem('apex-trade-theme') || localStorage.getItem('tj_theme') || 'dark';
 }
-let trades   = LS.get('tj_trades',   []);
+
+const DEFAULT_TRADES = [
+  {
+    id: "tr-1",
+    date: "2026-07-28",
+    ticker: "BTCUSDT",
+    assetType: "Crypto",
+    direction: "Long",
+    entryPrice: 64200,
+    exitPrice: 67800,
+    quantity: 0.5,
+    fees: 15,
+    stopLoss: 63000,
+    takeProfit: 68000,
+    emotion: "Confident",
+    mindsetScore: 9,
+    setup: "Bullish Flag",
+    outcome: "Win",
+    notes: "Perfect retest of 4H flag pattern."
+  },
+  {
+    id: "tr-2",
+    date: "2026-07-29",
+    ticker: "NVDA",
+    assetType: "Stock",
+    direction: "Long",
+    entryPrice: 118.5,
+    exitPrice: 124.2,
+    quantity: 100,
+    fees: 5,
+    stopLoss: 116.0,
+    takeProfit: 125.0,
+    emotion: "Calm",
+    mindsetScore: 8,
+    setup: "VWAP Bounce",
+    outcome: "Win",
+    notes: "Bounced right off session VWAP with high volume."
+  },
+  {
+    id: "tr-3",
+    date: "2026-07-30",
+    ticker: "ETHUSDT",
+    assetType: "Crypto",
+    direction: "Short",
+    entryPrice: 3450,
+    exitPrice: 3510,
+    quantity: 4,
+    fees: 12,
+    stopLoss: 3500,
+    takeProfit: 3300,
+    emotion: "FOMO",
+    mindsetScore: 4,
+    setup: "Breakout",
+    outcome: "Loss",
+    ruleViolations: ["Chased entry", "No stop loss set"],
+    notes: "Chased entry after impulse move. Cut loss quickly."
+  },
+  {
+    id: "tr-4",
+    date: "2026-08-01",
+    ticker: "AAPL",
+    assetType: "Stock",
+    direction: "Long",
+    entryPrice: 222.0,
+    exitPrice: 228.5,
+    quantity: 50,
+    fees: 4,
+    stopLoss: 219.5,
+    takeProfit: 229.0,
+    emotion: "Confident",
+    mindsetScore: 9,
+    setup: "FVG Tap",
+    outcome: "Win",
+    notes: "Filled 1H Fair Value Gap cleanly."
+  },
+  {
+    id: "tr-5",
+    date: "2026-08-02",
+    ticker: "SOLUSDT",
+    assetType: "Crypto",
+    direction: "Long",
+    entryPrice: 172.5,
+    exitPrice: 185.0,
+    quantity: 20,
+    fees: 8,
+    stopLoss: 168.0,
+    takeProfit: 186.0,
+    emotion: "Calm",
+    mindsetScore: 8,
+    setup: "Liquidity Sweep",
+    outcome: "Win",
+    notes: "Swept sell-side liquidity before rapid expansion."
+  }
+];
+
+const DEFAULT_CUSTOM_CHARTS = [
+  {
+    id: "custom-1",
+    title: "Bullish Flag Breakout & Retest",
+    category: "Continuations",
+    badgeClass: "badge-continuation",
+    winRate: "78% Win Rate",
+    rr: "1 : 3.5 RR",
+    description: "A continuation chart pattern formed after a strong upward pole movement followed by a downward sloping flag consolidation channel. Entry occurs on the breakout with high volume or the subsequent retest of the broken channel line.",
+    rules: [
+      "1. Identify strong upward momentum (the flagpole).",
+      "2. Confirm flag consolidation stays above 38.2% Fibonacci retracement level.",
+      "3. Enter long on high volume candle close above the upper flag trendline.",
+      "4. Place Stop Loss slightly below the lowest point of the flag consolidation.",
+      "5. Target project distance equal to length of initial flagpole."
+    ],
+    svg: `<svg viewBox="0 0 600 320" style="width:100%;height:100%;background:#0b0d17;border-radius:8px;" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="flagGrad1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#10b981" stop-opacity="0.25"/><stop offset="100%" stop-color="#10b981" stop-opacity="0.0"/></linearGradient></defs><line x1="40" y1="60" x2="560" y2="60" stroke="#1e293b" stroke-width="1" stroke-dasharray="4 4"/><line x1="40" y1="150" x2="560" y2="150" stroke="#1e293b" stroke-width="1" stroke-dasharray="4 4"/><line x1="40" y1="240" x2="560" y2="240" stroke="#1e293b" stroke-width="1" stroke-dasharray="4 4"/><path d="M 60 270 L 210 90" stroke="#10b981" stroke-width="4" stroke-linecap="round"/><line x1="200" y1="80" x2="350" y2="170" stroke="#f59e0b" stroke-width="2.5" stroke-dasharray="6 4"/><line x1="200" y1="120" x2="350" y2="210" stroke="#f59e0b" stroke-width="2.5" stroke-dasharray="6 4"/><path d="M 210 90 L 240 145 L 270 115 L 300 175 L 330 140 L 350 170" stroke="#06b6d4" stroke-width="2.5" fill="none"/><path d="M 350 170 L 380 110 L 520 40" stroke="#10b981" stroke-width="4" stroke-linecap="round"/><circle cx="380" cy="110" r="6" fill="#10b981" stroke="#ffffff" stroke-width="2"/><text x="390" y="105" fill="#10b981" font-size="12" font-weight="bold" font-family="Inter,sans-serif">ENTRY BREAKOUT</text><circle cx="520" cy="40" r="6" fill="#06b6d4" stroke="#ffffff" stroke-width="2"/><text x="440" y="32" fill="#06b6d4" font-size="12" font-weight="bold" font-family="Inter,sans-serif">TARGET (1:3.5 RR)</text><line x1="320" y1="205" x2="400" y2="205" stroke="#ef4444" stroke-width="2" stroke-dasharray="4 2"/><text x="405" y="209" fill="#ef4444" font-size="11" font-weight="bold" font-family="Inter,sans-serif">STOP LOSS</text></svg>`
+  },
+  {
+    id: "custom-2",
+    title: "Head & Shoulders Top Reversal",
+    category: "Reversals",
+    badgeClass: "badge-reversal",
+    winRate: "82% Win Rate",
+    rr: "1 : 4.0 RR",
+    description: "A major bearish reversal pattern formed by a peak (left shoulder), followed by a higher peak (head), and then another lower peak (right shoulder). A breakdown of the neckline confirms the trend reversal.",
+    rules: [
+      "1. Confirm left shoulder and head formation with strong volume peaks.",
+      "2. Draw the neckline connecting the trough low points.",
+      "3. Look for lower volume on the right shoulder rally.",
+      "4. Enter short on candle closing below the neckline trigger.",
+      "5. Stop loss above right shoulder high point."
+    ],
+    svg: `<svg viewBox="0 0 600 320" style="width:100%;height:100%;background:#0b0d17;border-radius:8px;" xmlns="http://www.w3.org/2000/svg"><line x1="40" y1="70" x2="560" y2="70" stroke="#1e293b" stroke-width="1" stroke-dasharray="4 4"/><line x1="40" y1="160" x2="560" y2="160" stroke="#1e293b" stroke-width="1" stroke-dasharray="4 4"/><line x1="40" y1="250" x2="560" y2="250" stroke="#1e293b" stroke-width="1" stroke-dasharray="4 4"/><path d="M 50 230 L 120 120 L 170 200 L 270 50 L 360 200 L 420 130 L 470 200 L 540 280" stroke="#8b5cf6" stroke-width="3.5" fill="none" stroke-linejoin="round"/><line x1="150" y1="200" x2="490" y2="200" stroke="#ef4444" stroke-width="2.5" stroke-dasharray="6 4"/><text x="495" y="195" fill="#ef4444" font-size="11" font-weight="bold" font-family="Inter,sans-serif">NECKLINE</text><text x="95" y="105" fill="#94a3b8" font-size="11" font-weight="bold" font-family="Inter,sans-serif">Left Shoulder</text><text x="255" y="38" fill="#a855f7" font-size="13" font-weight="bold" font-family="Inter,sans-serif">HEAD</text><text x="400" y="115" fill="#94a3b8" font-size="11" font-weight="bold" font-family="Inter,sans-serif">Right Shoulder</text><circle cx="470" cy="200" r="6" fill="#ef4444" stroke="#ffffff" stroke-width="2"/><text x="375" y="225" fill="#ef4444" font-size="12" font-weight="bold" font-family="Inter,sans-serif">ENTRY BREAKDOWN</text></svg>`
+  },
+  {
+    id: "custom-3",
+    title: "Double Bottom (W-Pattern) Reversal",
+    category: "Reversals",
+    badgeClass: "badge-reversal",
+    winRate: "76% Win Rate",
+    rr: "1 : 3.0 RR",
+    description: "A classic bullish reversal pattern where price touches a key support level twice without breaking through, forming a 'W' shape. Re-gaining the central peak confirms higher prices.",
+    rules: [
+      "1. Ensure support level has been validated by past market structure.",
+      "2. Second bottom must show bullish divergence on RSI or MACD.",
+      "3. Enter long when price breaks above the central neckline peak.",
+      "4. Place Stop Loss below the lowest point of the second bottom."
+    ],
+    svg: `<svg viewBox="0 0 600 320" style="width:100%;height:100%;background:#0b0d17;border-radius:8px;" xmlns="http://www.w3.org/2000/svg"><line x1="40" y1="80" x2="560" y2="80" stroke="#1e293b" stroke-width="1" stroke-dasharray="4 4"/><line x1="40" y1="170" x2="560" y2="170" stroke="#1e293b" stroke-width="1" stroke-dasharray="4 4"/><line x1="40" y1="260" x2="560" y2="260" stroke="#1e293b" stroke-width="1" stroke-dasharray="4 4"/><path d="M 50 70 L 150 250 L 250 140 L 350 250 L 440 140 L 530 60" stroke="#06b6d4" stroke-width="3.5" fill="none" stroke-linejoin="round"/><rect x="120" y="245" width="250" height="18" fill="#10b981" fill-opacity="0.18" stroke="#10b981" stroke-width="1" stroke-dasharray="4 4"/><text x="180" y="278" fill="#10b981" font-size="11" font-weight="bold" font-family="Inter,sans-serif">KEY SUPPORT ZONE</text><line x1="210" y1="140" x2="480" y2="140" stroke="#f59e0b" stroke-width="2" stroke-dasharray="5 3"/><circle cx="440" cy="140" r="6" fill="#10b981" stroke="#ffffff" stroke-width="2"/><text x="445" y="128" fill="#10b981" font-size="12" font-weight="bold" font-family="Inter,sans-serif">ENTRY</text></svg>`
+  },
+  {
+    id: "custom-4",
+    title: "VWAP Retest & Trend Bounce",
+    category: "Market Structure",
+    badgeClass: "badge-structure",
+    winRate: "80% Win Rate",
+    rr: "1 : 2.8 RR",
+    description: "Institutional entry setup targeting intraday momentum. After an initial trending push, price pulls back to test the Volume-Weighted Average Price (VWAP) line before continuing in trend direction.",
+    rules: [
+      "1. Trend must be clearly established above session VWAP.",
+      "2. Wait for orderly low-volume pullback touching VWAP line.",
+      "3. Look for bullish rejection candlestick (pinbar / engulfing) at VWAP.",
+      "4. Enter long on confirmation candle close.",
+      "5. Stop loss tight below VWAP bounce candle low."
+    ],
+    svg: `<svg viewBox="0 0 600 320" style="width:100%;height:100%;background:#0b0d17;border-radius:8px;" xmlns="http://www.w3.org/2000/svg"><path d="M 40 220 Q 180 180 340 150 T 560 120" stroke="#f97316" stroke-width="3" fill="none" stroke-dasharray="8 4"/><text x="50" y="240" fill="#f97316" font-size="12" font-weight="bold" font-family="Inter,sans-serif">SESSION VWAP LINE</text><path d="M 50 200 L 140 100 L 220 140 L 310 155 L 410 80 L 520 40" stroke="#10b981" stroke-width="3.5" fill="none"/><circle cx="310" cy="155" r="14" fill="#f97316" fill-opacity="0.25" stroke="#f97316" stroke-width="2"/><circle cx="310" cy="155" r="5" fill="#10b981" stroke="#ffffff" stroke-width="1.5"/><text x="325" y="178" fill="#10b981" font-size="12" font-weight="bold" font-family="Inter,sans-serif">VWAP REJECTION ENTRY</text></svg>`
+  },
+  {
+    id: "custom-5",
+    title: "Fair Value Gap (FVG) Mitigation",
+    category: "Market Structure",
+    badgeClass: "badge-structure",
+    winRate: "84% Win Rate",
+    rr: "1 : 4.2 RR",
+    description: "SMC / Inner Circle Trader (ICT) concept setup. An aggressive 3-candle displacement leaves an unfilled price gap (FVG). Price returns to fill (mitigate) the gap before continuing the trend.",
+    rules: [
+      "1. Identify 3-candle displacement creating clear gap between candle 1 high & candle 3 low.",
+      "2. Mark the FVG zone on chart.",
+      "3. Wait patiently for price to retrace into at least 50% (consequent encroachment) of the gap.",
+      "4. Enter in direction of initial displacement.",
+      "5. Stop loss placed beyond the origin candle of displacement."
+    ],
+    svg: `<svg viewBox="0 0 600 320" style="width:100%;height:100%;background:#0b0d17;border-radius:8px;" xmlns="http://www.w3.org/2000/svg"><rect x="170" y="110" width="220" height="70" fill="#a855f7" fill-opacity="0.2" stroke="#a855f7" stroke-width="1.5" stroke-dasharray="4 4"/><text x="185" y="148" fill="#c084fc" font-size="13" font-weight="bold" font-family="Inter,sans-serif">FAIR VALUE GAP (FVG)</text><path d="M 50 260 L 160 80 L 250 120 L 310 150 L 390 135 L 530 30" stroke="#10b981" stroke-width="3.5" fill="none"/><circle cx="310" cy="150" r="6" fill="#10b981" stroke="#ffffff" stroke-width="2"/><text x="320" y="175" fill="#10b981" font-size="12" font-weight="bold" font-family="Inter,sans-serif">FVG MITIGATION ENTRY</text></svg>`
+  },
+  {
+    id: "custom-6",
+    title: "Liquidity Sweep & AMD Expansion",
+    category: "Market Structure",
+    badgeClass: "badge-structure",
+    winRate: "86% Win Rate",
+    rr: "1 : 5.0 RR",
+    description: "Accumulation, Manipulation, and Distribution (AMD) setup. Smart money sweeps retail stop losses below equal lows (sell-side liquidity) before executing violent reversal expansion.",
+    rules: [
+      "1. Identify clear equal lows (retail liquidity pool).",
+      "2. Observe sharp manipulation probe breaking below support to hunt stops.",
+      "3. Look for immediate sharp V-reversal reclaiming market structure (Market Structure Shift / MSS).",
+      "4. Enter on OTE (Optimal Trade Entry) 61.8% / 70.5% retracement.",
+      "5. Target opposing buy-side liquidity high."
+    ],
+    svg: `<svg viewBox="0 0 600 320" style="width:100%;height:100%;background:#0b0d17;border-radius:8px;" xmlns="http://www.w3.org/2000/svg"><line x1="40" y1="210" x2="310" y2="210" stroke="#ef4444" stroke-width="2" stroke-dasharray="4 4"/><text x="50" y="200" fill="#ef4444" font-size="11" font-weight="bold" font-family="Inter,sans-serif">SELL-SIDE LIQUIDITY (EQUAL LOWS)</text><path d="M 50 170 L 100 210 L 150 175 L 200 210 L 260 240 L 300 130 L 400 80 L 530 20" stroke="#06b6d4" stroke-width="3.5" fill="none"/><circle cx="260" cy="240" r="7" fill="#ef4444" stroke="#ffffff" stroke-width="2"/><text x="190" y="270" fill="#ef4444" font-size="12" font-weight="bold" font-family="Inter,sans-serif">SWEEP (MANIPULATION)</text><circle cx="300" cy="130" r="6" fill="#10b981" stroke="#ffffff" stroke-width="2"/><text x="315" y="125" fill="#10b981" font-size="12" font-weight="bold" font-family="Inter,sans-serif">BOS & EXPANSION ENTRY</text></svg>`
+  }
+];
+
+let trades   = LS.get('tj_trades', null);
+if (!trades || !Array.isArray(trades) || trades.length === 0) {
+  trades = DEFAULT_TRADES;
+  LS.set('tj_trades', trades);
+}
 let journal  = LS.get('tj_journal',  {});
 let sheets   = LS.get('tj_sheets',   []);
 let settings = LS.get('tj_settings', { capital: 10000, currency: 'USD' });
 let theme    = getAppTheme();
 
+let initialCustom = LS.get('tj_custom_charts', null);
+if (!initialCustom || !Array.isArray(initialCustom) || initialCustom.length === 0) {
+  LS.set('tj_custom_charts', DEFAULT_CUSTOM_CHARTS);
+}
+
+const API_BASE = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
+  ? ''
+  : 'https://apex-trade-api.arpitkanotra.workers.dev';
+function apiFetch(path, options) {
+  const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
+  return fetch(url, options);
+}
+
 function saveTrades() {
   LS.set('tj_trades', trades);
-  fetch('/api/journal/trades/batch', {
+  apiFetch('/api/journal/trades/batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(trades),
@@ -36,7 +252,7 @@ function saveTrades() {
 
 function saveJournal() {
   LS.set('tj_journal', journal);
-  fetch('/api/journal/notes/batch', {
+  apiFetch('/api/journal/notes/batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(journal),
@@ -45,7 +261,7 @@ function saveJournal() {
 
 function saveSheets() {
   LS.set('tj_sheets', sheets);
-  fetch('/api/journal/sheets/batch', {
+  apiFetch('/api/journal/sheets/batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(sheets),
@@ -54,7 +270,7 @@ function saveSheets() {
 
 function savePsychLogs(psychLogs) {
   LS.set('tj_psych_logs', psychLogs);
-  fetch('/api/journal/psych-logs/batch', {
+  apiFetch('/api/journal/psych-logs/batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(psychLogs),
@@ -214,7 +430,7 @@ const RULE_VIOLATIONS = [
 ];
 
 // ── Router ────────────────────────────────────────────────────────────
-const PAGES = ['dashboard', 'trades', 'analytics', 'charts', 'psychology', 'journal', 'new-entry', 'settings'];
+const PAGES = ['dashboard', 'trades', 'analytics', 'charts', 'psychology', 'journal', 'new-entry', 'nakshatra', 'settings'];
 let currentPage = 'dashboard';
 
 function navigate(page) {
@@ -233,11 +449,114 @@ function navigate(page) {
   } catch (err) {}
 }
 
+window.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'APEX_NAVIGATE') {
+    if (event.data.nkSubTab) {
+      currentNkTab = event.data.nkSubTab;
+      document.querySelectorAll('.nk-sub-tab').forEach(b => {
+        b.classList.toggle('active', b.dataset.nkTab === currentNkTab);
+      });
+    }
+    if (event.data.page && event.data.page !== currentPage) {
+      navigate(event.data.page);
+    } else if (event.data.page === 'nakshatra') {
+      const pageEl = document.querySelector('.page');
+      if (pageEl) renderNakshatra(pageEl);
+    }
+  }
+  if (event.data && event.data.type === 'APEX_THEME_CHANGE') {
+    if (event.data.theme) {
+      applyTheme(event.data.theme);
+    }
+  }
+});
+
+let currentNkTab = 'mansion';
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.nk-sub-tab');
+  if (btn) {
+    const tab = btn.dataset.nkTab;
+    if (tab) {
+      currentNkTab = tab;
+      document.querySelectorAll('.nk-sub-tab').forEach(b => {
+        b.classList.toggle('active', b.dataset.nkTab === tab);
+      });
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: 'APEX_NK_SUBTAB_CHANGED', subTab: tab }, '*');
+        }
+      } catch (err) {}
+      // Update right panel in-place without full re-render
+      const rightPanel = document.getElementById('nk-right-panel');
+      if (rightPanel && currentPage === 'nakshatra') {
+        updateNkRightPanel(rightPanel, tab);
+      } else {
+        const pageEl = document.querySelector('.page');
+        if (pageEl && currentPage === 'nakshatra') {
+          renderNakshatra(pageEl);
+        }
+      }
+    }
+  }
+});
+
+function updateNkRightPanel(panel, tab) {
+  if (tab === 'mansion') {
+    panel.classList.remove('nk-right-panel--open');
+    panel.innerHTML = '';
+    document.getElementById('nk-split-layout')?.classList.remove('nk-split-layout--open');
+    return;
+  }
+  panel.classList.add('nk-right-panel--open');
+  document.getElementById('nk-split-layout')?.classList.add('nk-split-layout--open');
+  const wrap = document.createElement('div');
+  wrap.className = 'wrap';
+  // Header with close / tab title
+  const tabNames = { rulers: 'Planet Lords', analytics: 'Star Performance', rules: 'Astro Guidelines' };
+  const header = document.createElement('div');
+  header.className = 'nk-right-panel-header';
+  header.innerHTML = `
+    <span class="nk-right-panel-title">${tabNames[tab] || tab}</span>
+    <button class="nk-right-panel-close" title="Close panel" aria-label="Close panel">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  `;
+  header.querySelector('.nk-right-panel-close').addEventListener('click', () => {
+    currentNkTab = 'mansion';
+    document.querySelectorAll('.nk-sub-tab').forEach(b => {
+      b.classList.toggle('active', b.dataset.nkTab === 'mansion');
+    });
+    panel.classList.remove('nk-right-panel--open');
+    panel.innerHTML = '';
+    document.getElementById('nk-split-layout')?.classList.remove('nk-split-layout--open');
+  });
+  panel.innerHTML = '';
+  panel.appendChild(header);
+  panel.appendChild(wrap);
+  const nkState = LS.get('tj_nakshatra_state', {});
+  if (tab === 'rulers') renderRulersTab(wrap, nkState);
+  else if (tab === 'analytics') renderAnalyticsTab(wrap, nkState);
+  else if (tab === 'rules') renderRulesTab(wrap);
+}
+
 function renderPage(page) {
+  const stdNav = document.getElementById('subbar-nav-standard');
+  const nkNav = document.getElementById('subbar-nav-nakshatra');
+  if (stdNav && nkNav) {
+    if (page === 'nakshatra') {
+      stdNav.style.display = 'none';
+      nkNav.style.display = 'block';
+    } else {
+      stdNav.style.display = 'block';
+      nkNav.style.display = 'none';
+    }
+  }
+
   const container = document.getElementById('app-content');
   container.innerHTML = '';
   const el = document.createElement('div');
-  el.className = page === 'new-entry' ? 'page page-no-padding' : 'page';
+  el.className = (page === 'new-entry' || page === 'nakshatra') ? 'page page-no-padding' : 'page';
   container.appendChild(el);
 
   switch (page) {
@@ -248,9 +567,534 @@ function renderPage(page) {
     case 'psychology':  renderPsychology(el);   break;
     case 'journal':     renderJournal(el, { hideSavedEntries: false }); break;
     case 'new-entry':   journalDate = new Date().toISOString().slice(0, 10); renderJournal(el, { hideSavedEntries: true }); break;
+    case 'nakshatra':   renderNakshatra(el);    break;
     case 'settings':    renderSettings(el);     break;
   }
   updateCapitalDisplay();
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  NAKSHATRA TRADING JOURNAL
+// ══════════════════════════════════════════════════════════════════════
+const NAKSHATRA_DATA = [
+ {d:"Aug 8",  dow:"Sat", nak:"Rohini",          lord:"Moon",    time:"Until 4:51 PM", note:"In effect since the previous night. Hands off to Mrigashirsha at 4:51 PM today."},
+ {d:"Aug 9",  dow:"Sun", nak:"Mrigashirsha",     lord:"Mars",    time:"Full Day (from 4:51 PM)", note:"Began yesterday, 4:51 PM. Holds for the full day today."},
+ {d:"Aug 10", dow:"Mon", nak:"Ardra",            lord:"Rahu",    time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Aug 11", dow:"Tue", nak:"Punarvasu",        lord:"Jupiter", time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Aug 12", dow:"Wed", nak:"Pushya",           lord:"Saturn",  time:"Full Day (Amavasya)", note:"Amavasya today. Nakshatra unchanged through the day."},
+ {d:"Aug 13", dow:"Thu", nak:"Ashlesha",         lord:"Mercury", time:"From 6:06 AM", note:"Begins near sunrise, 6:06 AM today."},
+ {d:"Aug 14", dow:"Fri", nak:"Purva Phalguni",   lord:"Venus",   time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Aug 15", dow:"Sat", nak:"Uttara Phalguni",  lord:"Sun",     time:"From 9:34 AM", note:"Begins 9:34 AM today. Independence Day."},
+ {d:"Aug 16", dow:"Sun", nak:"Hasta",            lord:"Moon",    time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Aug 17", dow:"Mon", nak:"Chitra",           lord:"Mars",    time:"From 4:19 PM", note:"Begins 4:19 PM today. Nag Panchami."},
+ {d:"Aug 18", dow:"Tue", nak:"Swati",            lord:"Rahu",    time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Aug 19", dow:"Wed", nak:"Swati",            lord:"Rahu",    time:"Full Day (Day 2)", note:"Still Swati — second full day of this mansion."},
+ {d:"Aug 20", dow:"Thu", nak:"Vishakha",         lord:"Jupiter", time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Aug 21", dow:"Fri", nak:"Anuradha",         lord:"Saturn",  time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Aug 22", dow:"Sat", nak:"Jyeshtha",         lord:"Mercury", time:"From 2:49 PM", note:"Begins 2:49 PM today."},
+ {d:"Aug 23", dow:"Sun", nak:"Mula",             lord:"Ketu",    time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Aug 24", dow:"Mon", nak:"Purva Ashadha",    lord:"Venus",   time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Aug 25", dow:"Tue", nak:"Uttara Ashadha",   lord:"Sun",     time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Aug 26", dow:"Wed", nak:"Shravana",         lord:"Moon",    time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Aug 27", dow:"Thu", nak:"Dhanishta",        lord:"Mars",    time:"From 1:35 PM", note:"Begins 1:35 PM today. Panchak begins."},
+ {d:"Aug 28", dow:"Fri", nak:"Shatabhisha",      lord:"Rahu",    time:"Full Day (Purnima)", note:"Purnima / Raksha Bandhan. Unchanged through the day."},
+ {d:"Aug 29", dow:"Sat", nak:"Purva Bhadrapada", lord:"Jupiter", time:"From 9:37 PM", note:"Begins 9:37 PM today."},
+ {d:"Aug 30", dow:"Sun", nak:"Uttara Bhadrapada",lord:"Saturn",  time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Aug 31", dow:"Mon", nak:"Revati",           lord:"Mercury", time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Sep 1",  dow:"Tue", nak:"Ashwini",          lord:"Ketu",    time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Sep 2",  dow:"Wed", nak:"Bharani",          lord:"Venus",   time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Sep 3",  dow:"Thu", nak:"Krittika",         lord:"Sun",     time:"From 7:25 AM", note:"Begins 7:25 AM today."},
+ {d:"Sep 4",  dow:"Fri", nak:"Rohini",           lord:"Moon",    time:"Full Day (Janmashtami)", note:"Krishna Janmashtami. Unchanged through the day."},
+ {d:"Sep 5",  dow:"Sat", nak:"Mrigashirsha",     lord:"Mars",    time:"From 10:18 AM", note:"Begins 10:18 AM today."},
+ {d:"Sep 6",  dow:"Sun", nak:"Ardra",            lord:"Rahu",    time:"Full Day (24 hrs)", note:"Carries through the day unchanged."},
+ {d:"Sep 7",  dow:"Mon", nak:"Punarvasu",        lord:"Jupiter", time:"From 12:38 PM", note:"Begins 12:38 PM today."}
+];
+
+const NAKSHATRA_PALETTE = {
+  "Moon":    {c:"#CE8A96", d:"#B5677A"}, // rose
+  "Mars":    {c:"#BD5B5B", d:"#9C4444"}, // coral-red
+  "Rahu":    {c:"#A793C4", d:"#7E63A6"}, // lavender
+  "Jupiter": {c:"#D9A441", d:"#B9862A"}, // marigold
+  "Saturn":  {c:"#8FA588", d:"#6C8768"}, // sage
+  "Mercury": {c:"#7FA6A0", d:"#5C807A"}, // eucalyptus
+  "Venus":   {c:"#E0A8C4", d:"#C77E9E"}, // orchid pink
+  "Sun":     {c:"#E3B23C", d:"#C89226"}, // gold
+  "Ketu":    {c:"#B39CD0", d:"#8F73B0"}  // violet
+};
+
+function renderRulersTab(wrapEl, state) {
+  const rulersData = {};
+  Object.keys(NAKSHATRA_PALETTE).forEach(lord => {
+    rulersData[lord] = { lord, count: 0, wins: 0, pnl: 0, nakshatras: [] };
+  });
+
+  NAKSHATRA_DATA.forEach((day, i) => {
+    const s = state['day' + i] || {};
+    const lord = day.lord;
+    if (rulersData[lord]) {
+      if (!rulersData[lord].nakshatras.includes(day.nak)) {
+        rulersData[lord].nakshatras.push(day.nak);
+      }
+      if (s.entry !== '' && s.exit !== '' && s.entry !== undefined && s.exit !== undefined && s.entry !== null && s.exit !== null && !isNaN(s.entry) && !isNaN(s.exit)) {
+        rulersData[lord].count++;
+        const qty = parseFloat(s.qty) || 1;
+        const dir = s.direction === 'short' ? -1 : 1;
+        const pnl = (parseFloat(s.exit) - parseFloat(s.entry)) * qty * dir;
+        rulersData[lord].pnl += pnl;
+        if (pnl > 0) rulersData[lord].wins++;
+      }
+    }
+  });
+
+  wrapEl.innerHTML = `
+    <div class="nk-rulers-grid">
+      ${Object.values(rulersData).map(r => {
+        const pal = NAKSHATRA_PALETTE[r.lord] || { c: '#A793C4', d: '#7E63A6' };
+        const winRate = r.count > 0 ? Math.round((r.wins / r.count) * 100) + '%' : '0%';
+        const pnlFormatted = (r.pnl >= 0 ? '₹' : '-₹') + Math.abs(Math.round(r.pnl)).toLocaleString('en-IN');
+        const pnlClass = r.pnl > 0 ? 'profit' : (r.pnl < 0 ? 'loss' : '');
+        return `
+          <div class="nk-ruler-card" style="border-left: 4px solid ${pal.c};">
+            <div class="nk-ruler-header">
+              <span class="nk-ruler-dot" style="background:${pal.c};"></span>
+              <span class="nk-ruler-name">${r.lord}</span>
+              <span class="nk-ruler-pnl ${pnlClass}">${pnlFormatted}</span>
+            </div>
+            <div class="nk-ruler-naks">
+              <strong>Mansions:</strong> ${r.nakshatras.join(', ')}
+            </div>
+            <div class="nk-ruler-stats">
+              <div><span>Trades Logged:</span> <strong>${r.count}</strong></div>
+              <div><span>Win Rate:</span> <strong>${winRate}</strong></div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderAnalyticsTab(wrapEl, state) {
+  let totalTrades = 0, wins = 0, totalPnl = 0, longPnl = 0, shortPnl = 0;
+  NAKSHATRA_DATA.forEach((day, i) => {
+    const s = state['day' + i] || {};
+    if (s.entry !== '' && s.exit !== '' && s.entry !== undefined && s.exit !== undefined && s.entry !== null && s.exit !== null && !isNaN(s.entry) && !isNaN(s.exit)) {
+      totalTrades++;
+      const qty = parseFloat(s.qty) || 1;
+      const dir = s.direction === 'short' ? -1 : 1;
+      const pnl = (parseFloat(s.exit) - parseFloat(s.entry)) * qty * dir;
+      totalPnl += pnl;
+      if (pnl > 0) wins++;
+      if (s.direction === 'short') shortPnl += pnl;
+      else longPnl += pnl;
+    }
+  });
+
+  const winRate = totalTrades > 0 ? Math.round((wins / totalTrades) * 100) : 0;
+  const pnlFormatted = (totalPnl >= 0 ? '₹' : '-₹') + Math.abs(Math.round(totalPnl)).toLocaleString('en-IN');
+  const longPnlFmt = (longPnl >= 0 ? '₹' : '-₹') + Math.abs(Math.round(longPnl)).toLocaleString('en-IN');
+  const shortPnlFmt = (shortPnl >= 0 ? '₹' : '-₹') + Math.abs(Math.round(shortPnl)).toLocaleString('en-IN');
+
+  wrapEl.innerHTML = `
+    <div class="nk-analytics-container">
+      <div class="nk-analytics-card">
+        <h3>Session Performance</h3>
+        <div class="nk-analytics-row"><span>Total Trades Logged</span><strong>${totalTrades}</strong></div>
+        <div class="nk-analytics-row"><span>Win Rate</span><strong>${winRate}%</strong></div>
+        <div class="nk-analytics-row"><span>Total Net P&amp;L</span><strong class="${totalPnl >= 0 ? 'profit' : 'loss'}">${pnlFormatted}</strong></div>
+      </div>
+      <div class="nk-analytics-card">
+        <h3>Directional Breakdown</h3>
+        <div class="nk-analytics-row"><span>Long Trades P&amp;L</span><strong class="${longPnl >= 0 ? 'profit' : 'loss'}">${longPnlFmt}</strong></div>
+        <div class="nk-analytics-row"><span>Short Trades P&amp;L</span><strong class="${shortPnl >= 0 ? 'profit' : 'loss'}">${shortPnlFmt}</strong></div>
+        <div class="nk-progress-bar-wrap" style="margin-top:12px;">
+          <div style="font-size:11px; margin-bottom:4px; color:var(--plum-soft);">Win Rate Progress</div>
+          <div class="nk-progress-bar"><div class="nk-progress-fill" style="width:${winRate}%;"></div></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderRulesTab(wrapEl) {
+  const rules = LS.get('tj_nakshatra_rules_text', '1. Rahu/Ketu Star Days (Swati, Shatabhisha, Magha): Strict 0.5% risk limit per trade.\n2. Jupiter Star Days (Punarvasu, Vishakha): Favor trend-following breakout setups.\n3. Saturn Star Days (Pushya, Anuradha): Expect slower range consolidations; avoid chasing late entries.');
+
+  wrapEl.innerHTML = `
+    <div class="nk-rules-container">
+      <div class="nk-rule-card">
+        <h3>Astro Rules &amp; Pre-Trade Checklist</h3>
+        <textarea id="nk-rules-editor" class="nk-rules-textarea" rows="8" placeholder="Log your rules for Rahu, Ketu, Mars, and Jupiter star days…">${rules}</textarea>
+        <button class="btn-nk primary" id="nk-save-rules-btn" style="margin-top:12px;">Save Astro Guidelines</button>
+      </div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const btn = wrapEl.querySelector('#nk-save-rules-btn');
+    const txt = wrapEl.querySelector('#nk-rules-editor');
+    if (btn && txt) {
+      btn.addEventListener('click', () => {
+        LS.set('tj_nakshatra_rules_text', txt.value);
+        toast('Astro guidelines saved successfully!', 'success');
+      });
+    }
+  }, 50);
+}
+
+async function renderNakshatra(el) {
+  let state = LS.get('tj_nakshatra_state', {});
+
+  try {
+    const res = await apiFetch('/api/journal/nakshatra');
+    if (res.ok) {
+      const sqlState = await res.json();
+      if (sqlState && Object.keys(sqlState).length > 0) {
+        state = { ...state, ...sqlState };
+        LS.set('tj_nakshatra_state', state);
+      } else if (state && Object.keys(state).length > 0) {
+        apiFetch('/api/journal/nakshatra/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(state),
+        }).catch(() => undefined);
+      }
+    }
+  } catch (err) {
+    console.warn('Nakshatra SQL sync fallback:', err);
+  }
+
+  // Initialize state keys if empty
+  NAKSHATRA_DATA.forEach((day, i) => {
+    const id = 'day' + i;
+    if (!state[id]) {
+      state[id] = { instrument: '', direction: '', entry: '', exit: '', qty: '', notes: '' };
+    }
+  });
+
+  // Split-panel layout: left = mansion journal, right = subtab panel
+  const splitLayout = document.createElement('div');
+  splitLayout.id = 'nk-split-layout';
+  splitLayout.className = 'nk-split-layout' + (currentNkTab !== 'mansion' ? ' nk-split-layout--open' : '');
+
+  // Left pane always contains the mansion journal
+  const leftPane = document.createElement('div');
+  leftPane.id = 'nk-left-pane';
+  leftPane.className = 'nk-left-pane';
+
+  // Right pane for subtab content
+  const rightPanel = document.createElement('div');
+  rightPanel.id = 'nk-right-panel';
+  rightPanel.className = 'nk-right-panel' + (currentNkTab !== 'mansion' ? ' nk-right-panel--open' : '');
+
+  splitLayout.appendChild(leftPane);
+  splitLayout.appendChild(rightPanel);
+
+  const pageWrap = document.createElement('div');
+  pageWrap.className = 'nakshatra-page-wrap';
+  pageWrap.appendChild(splitLayout);
+  el.appendChild(pageWrap);
+
+  // If on a non-mansion tab, populate right panel immediately
+  if (currentNkTab !== 'mansion') {
+    updateNkRightPanel(rightPanel, currentNkTab);
+  }
+
+  leftPane.innerHTML = `
+    <header>
+      <div class="eyebrow">Sravana – Bhadrapada · Vikram Samvat 2083</div>
+      <h1>The <em>Nakshatra</em> Trading Journal</h1>
+      <p class="sub">One page for every lunar mansion the Moon walks through this cycle — track setups, entries &amp; exits alongside the star of the day.</p>
+      <div class="range">08 AUG — 07 SEP 2026 &nbsp;·&nbsp; NEW DELHI, IST</div>
+      <button type="button" class="btn-nk-fullscreen" id="nk-fullscreen-btn" title="Fullscreen Mode">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+      </button>
+    </header>
+
+    <div class="wrap">
+      <svg class="bloom-divider" viewBox="0 0 1180 34" preserveAspectRatio="none">
+        <line x1="0" y1="17" x2="1180" y2="17" stroke="#E9DCCF" stroke-width="1"/>
+        <g transform="translate(590,17)">
+          <circle r="3.4" fill="#CE8A96"/>
+          <circle cx="10" r="2.4" fill="#8FA588"/>
+          <circle cx="-10" r="2.4" fill="#A793C4"/>
+          <circle cx="20" r="1.8" fill="#D9A441"/>
+          <circle cx="-20" r="1.8" fill="#CE8A96"/>
+        </g>
+      </svg>
+
+      <section class="strip-section">
+        <div class="strip-title">Jump to a day</div>
+        <div class="strip" id="nk-strip"></div>
+        <div class="legend" id="nk-legend"></div>
+      </section>
+
+      <section class="summary">
+        <div class="stat"><div class="n" id="nk-statDays">31</div><div class="l">Days tracked</div></div>
+        <div class="stat" id="nk-statTrades"><div class="n">0</div><div class="l">Trades logged</div></div>
+        <div class="stat profit" id="nk-statWin"><div class="n">0</div><div class="l">Winning days</div></div>
+        <div class="stat" id="nk-statPnl"><div class="n">₹0</div><div class="l">Net P&amp;L (this session)</div></div>
+      </section>
+
+      <div class="grid" id="nk-grid"></div>
+
+      <div class="actions">
+        <button class="btn-nk primary" id="nk-exportBtn">Download journal as JSON</button>
+        <button class="btn-nk" id="nk-printBtn">Print / save as PDF</button>
+      </div>
+      <p class="note-strip">Entries auto-saved locally in your browser session.<br>Download the JSON to backup or share what you've logged.</p>
+    </div>
+  `;
+
+  const gridEl = leftPane.querySelector('#nk-grid');
+  const stripEl = leftPane.querySelector('#nk-strip');
+  const legendEl = leftPane.querySelector('#nk-legend');
+
+  const usedLords = [...new Set(NAKSHATRA_DATA.map(d => d.lord))];
+  legendEl.innerHTML = usedLords.map(l => {
+    const p = NAKSHATRA_PALETTE[l];
+    return `<span><i style="background:${p.d}"></i>${l}</span>`;
+  }).join('');
+
+  NAKSHATRA_DATA.forEach((day, i) => {
+    const p = NAKSHATRA_PALETTE[day.lord] || NAKSHATRA_PALETTE["Moon"];
+    const id = 'day' + i;
+    const cur = state[id] || {};
+    const dayNum = day.d.match(/\d+/)?.[0] || day.d;
+
+    // strip dot
+    const dot = document.createElement('div');
+    dot.className = i === 0 ? 'dot active' : 'dot';
+    dot.style.background = p.d;
+    dot.textContent = dayNum;
+    dot.title = `${day.d} — ${day.nak} (${day.lord})`;
+    dot.addEventListener('click', () => {
+      const cardEl = leftPane.querySelector('#nk-card-' + id);
+      if (cardEl) {
+        cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      stripEl.querySelectorAll('.dot').forEach(x => x.classList.remove('active'));
+      dot.classList.add('active');
+    });
+    stripEl.appendChild(dot);
+
+    // card
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'nk-card-' + id;
+    card.style.setProperty('--petal-color', p.c);
+    card.style.setProperty('--petal-color-deep', p.d);
+
+    const isLongOn = cur.direction === 'long' ? 'on' : '';
+    const isShortOn = cur.direction === 'short' ? 'on' : '';
+
+    const isToday = i === 0;
+    const todayBadgeHtml = isToday ? `<span class="today-badge">✨ TODAY</span>` : '';
+
+    card.innerHTML = `
+      <div class="card-top">
+        <div class="date-block">
+          <div class="dow">${day.dow}, 2026 ${todayBadgeHtml}</div>
+          <div class="dnum">${day.d}</div>
+        </div>
+        <div class="naksh-badge">
+          <div class="naksh-name">${day.nak}</div>
+          <div class="naksh-lord">Ruled by ${day.lord}</div>
+          <div class="naksh-timing-badge" title="Nakshatra Timing">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px;vertical-align:-1px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>${day.time || ''}</span>
+          </div>
+        </div>
+      </div>
+      <div class="naksh-note">${day.note}</div>
+      <div class="divider"></div>
+
+      <div class="row">
+        <div class="field">
+          <label>Instrument</label>
+          <input type="text" placeholder="NIFTY, BANKNIFTY, RELIANCE…" data-id="${id}" data-k="instrument" value="${cur.instrument || ''}">
+        </div>
+        <div class="field" style="max-width:110px;">
+          <label>Qty / Lots</label>
+          <input type="text" placeholder="—" data-id="${id}" data-k="qty" value="${cur.qty || ''}">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Direction</label>
+          <div class="dir-toggle">
+            <button type="button" class="dir-btn long ${isLongOn}" data-id="${id}">Long</button>
+            <button type="button" class="dir-btn short ${isShortOn}" data-id="${id}">Short</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Entry price</label>
+          <input type="number" step="0.01" placeholder="0.00" data-id="${id}" data-k="entry" value="${cur.entry || ''}">
+        </div>
+        <div class="field">
+          <label>Exit price</label>
+          <input type="number" step="0.01" placeholder="0.00" data-id="${id}" data-k="exit" value="${cur.exit || ''}">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Notes — setup, mood, what the star said vs. what the chart said</label>
+          <textarea data-id="${id}" data-k="notes" placeholder="Setup, confluence, how it felt to trade under ${day.nak}…">${cur.notes || ''}</textarea>
+        </div>
+      </div>
+
+      <div class="pnl-row">
+        <span class="pnl-label">Day P&amp;L</span>
+        <span class="pnl-value zero" id="nk-pnl-${id}">₹0</span>
+      </div>
+    `;
+    gridEl.appendChild(card);
+    updateNkCardPnl(id, true);
+  });
+
+  function saveNkState() {
+    LS.set('tj_nakshatra_state', state);
+    apiFetch('/api/journal/nakshatra/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state),
+    }).catch(() => undefined);
+  }
+
+  function recalcNkSummary() {
+    let tradesCount = 0, wins = 0, net = 0;
+    if (state && typeof state === 'object') {
+      Object.values(state).forEach(s => {
+        if (s && typeof s === 'object' && s.entry !== '' && s.exit !== '' && s.entry !== undefined && s.exit !== undefined && s.entry !== null && s.exit !== null && !isNaN(s.entry) && !isNaN(s.exit)) {
+          tradesCount++;
+          const qty = parseFloat(s.qty) || 1;
+          const dir = s.direction === 'short' ? -1 : 1;
+          const pnl = (parseFloat(s.exit) - parseFloat(s.entry)) * qty * dir;
+          net += pnl;
+          if (pnl > 0) wins++;
+        }
+      });
+    }
+
+    const statTradesEl = leftPane.querySelector('#nk-statTrades .n');
+    const statWinEl = leftPane.querySelector('#nk-statWin .n');
+    const pnlEl = leftPane.querySelector('#nk-statPnl .n');
+    const pnlCard = leftPane.querySelector('#nk-statPnl');
+
+    if (statTradesEl) statTradesEl.textContent = tradesCount;
+    if (statWinEl) statWinEl.textContent = wins;
+    if (pnlEl) pnlEl.textContent = (net >= 0 ? '₹' : '-₹') + Math.abs(Math.round(net)).toLocaleString('en-IN');
+    if (pnlCard) {
+      pnlCard.classList.remove('profit', 'loss');
+      if (net > 0) pnlCard.classList.add('profit');
+      else if (net < 0) pnlCard.classList.add('loss');
+    }
+  }
+
+  function updateNkCardPnl(id, skipSummary = false) {
+    const s = state[id];
+    const pnlValEl = leftPane.querySelector('#nk-pnl-' + id);
+    if (!pnlValEl || !s) return;
+
+    if (s.entry !== '' && s.exit !== '' && s.entry !== undefined && s.exit !== undefined && s.entry !== null && s.exit !== null && !isNaN(s.entry) && !isNaN(s.exit)) {
+      const qty = parseFloat(s.qty) || 1;
+      const dir = s.direction === 'short' ? -1 : 1;
+      const pnl = (parseFloat(s.exit) - parseFloat(s.entry)) * qty * dir;
+      pnlValEl.textContent = (pnl >= 0 ? '₹' : '-₹') + Math.abs(Math.round(pnl)).toLocaleString('en-IN');
+      pnlValEl.className = 'pnl-value ' + (pnl > 0 ? 'pos' : (pnl < 0 ? 'neg' : 'zero'));
+    } else {
+      pnlValEl.textContent = '₹0';
+      pnlValEl.className = 'pnl-value zero';
+    }
+    if (!skipSummary) recalcNkSummary();
+  }
+
+  gridEl.addEventListener('input', (e) => {
+    const id = e.target.getAttribute('data-id');
+    const k = e.target.getAttribute('data-k');
+    if (!id || !k) return;
+    state[id][k] = e.target.value;
+    saveNkState();
+    if (k === 'entry' || k === 'exit' || k === 'qty') updateNkCardPnl(id);
+  });
+
+  gridEl.addEventListener('click', (e) => {
+    if (e.target.classList.contains('dir-btn')) {
+      const id = e.target.getAttribute('data-id');
+      const isLong = e.target.classList.contains('long');
+      const card = leftPane.querySelector('#nk-card-' + id);
+      if (card) card.querySelectorAll('.dir-btn').forEach(b => b.classList.remove('on'));
+      e.target.classList.add('on');
+      state[id].direction = isLong ? 'long' : 'short';
+      saveNkState();
+      updateNkCardPnl(id);
+    }
+  });
+
+  const exportBtn = leftPane.querySelector('#nk-exportBtn');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      const payload = NAKSHATRA_DATA.map((day, i) => ({
+        date: day.d,
+        nakshatra: day.nak,
+        lord: day.lord,
+        ...state['day' + i]
+      }));
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'nakshatra-trading-journal-aug-sep-2026.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  const fsBtn = leftPane.querySelector('#nk-fullscreen-btn');
+  if (fsBtn) {
+    fsBtn.addEventListener('click', () => {
+      const isFs = document.body.classList.toggle('nk-fullscreen');
+      const label = fsBtn.querySelector('span');
+      const svg = fsBtn.querySelector('svg');
+      if (isFs) {
+        fsBtn.title = 'Exit Fullscreen';
+        if (svg) { svg.innerHTML = '<path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 0 2-2h3M3 16h3a2 2 0 0 0 2 2v3"/>'; }
+      } else {
+        fsBtn.title = 'Fullscreen Mode';
+        if (svg) { svg.innerHTML = '<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>'; }
+      }
+      try {
+        window.parent.postMessage({ type: 'TOGGLE_NAKSHATRA_FULLSCREEN', fullscreen: isFs }, '*');
+      } catch (err) {}
+    });
+  }
+
+  const handleEsc = (e) => {
+    if (e.key === 'Escape' && document.body.classList.contains('nk-fullscreen')) {
+      document.body.classList.remove('nk-fullscreen');
+        if (fsBtn) {
+          fsBtn.title = 'Fullscreen Mode';
+          const svg = fsBtn.querySelector('svg');
+          if (svg) svg.innerHTML = '<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>';
+        }
+      }
+      try {
+        window.parent.postMessage({ type: 'TOGGLE_NAKSHATRA_FULLSCREEN', fullscreen: false }, '*');
+      } catch (err) {}
+    }
+  };
+  window.addEventListener('keydown', handleEsc);
+
+  const printBtn = leftPane.querySelector('#nk-printBtn');
+  if (printBtn) {
+    printBtn.addEventListener('click', () => window.print());
+  }
+
+  recalcNkSummary();
 }
 
 // ── Sidebar mobile ────────────────────────────────────────────────────
@@ -2329,7 +3173,7 @@ function init() {
 
 function saveCustomCharts(chartsList) {
   LS.set('tj_custom_charts', chartsList);
-  fetch('/api/journal/custom-charts/batch', {
+  apiFetch('/api/journal/custom-charts/batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(chartsList),
@@ -2342,7 +3186,7 @@ async function loadFromSql() {
   let dbChartsEmpty = false;
 
   try {
-    const resTrades = await fetch('/api/journal/trades');
+    const resTrades = await apiFetch('/api/journal/trades');
     if (resTrades.ok) {
       const data = await resTrades.json();
       if (data && data.length > 0) {
@@ -2357,7 +3201,7 @@ async function loadFromSql() {
   }
 
   try {
-    const resNotes = await fetch('/api/journal/notes');
+    const resNotes = await apiFetch('/api/journal/notes');
     if (resNotes.ok) {
       const data = await resNotes.json();
       if (data && Object.keys(data).length > 0) {
@@ -2372,7 +3216,7 @@ async function loadFromSql() {
   }
 
   try {
-    const resCharts = await fetch('/api/journal/custom-charts');
+    const resCharts = await apiFetch('/api/journal/custom-charts');
     if (resCharts.ok) {
       const data = await resCharts.json();
       if (data && data.length > 0) {
@@ -2400,7 +3244,7 @@ async function loadFromSql() {
 
   let dbSheetsEmpty = false;
   try {
-    const resSheets = await fetch('/api/journal/sheets');
+    const resSheets = await apiFetch('/api/journal/sheets');
     if (resSheets.ok) {
       const data = await resSheets.json();
       if (data && data.length > 0) {
@@ -2437,12 +3281,20 @@ window.openTradeDetail   = openTradeDetail;
 window.deleteTrade       = deleteTrade;
 window.selectJournalDate = selectJournalDate;
 window.exportData        = exportData;
-
+window.filterCharts      = function(cat) {
+  chartFilterCategory = cat;
+  const pageEl = document.querySelector('.page');
+  if (pageEl) renderChartsGallery(pageEl);
+};
 
 let chartFilterCategory = 'All';
 
 function renderChartsGallery(el) {
-  const custom = LS.get('tj_custom_charts', []);
+  let custom = LS.get('tj_custom_charts', []);
+  if (!custom || !Array.isArray(custom) || custom.length === 0) {
+    custom = DEFAULT_CUSTOM_CHARTS;
+    LS.set('tj_custom_charts', custom);
+  }
   const pinterestCharts = custom.filter(c => c.category === 'Pinterest');
   const myCharts = custom.filter(c => c.category !== 'Pinterest');
 
@@ -2740,7 +3592,7 @@ async function handleEditChartSubmit() {
 
   if (finalImg && finalImg.startsWith('data:image/')) {
     try {
-      const uploadRes = await fetch('/api/upload', {
+      const uploadRes = await apiFetch('/api/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64: finalImg })
@@ -2760,7 +3612,7 @@ async function handleEditChartSubmit() {
   saveCustomCharts(custom);
 
   // Sync to D1
-  fetch(`/api/journal/custom-charts/${id}`, {
+  apiFetch(`/api/journal/custom-charts/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updatedChart),
@@ -2779,7 +3631,7 @@ function deleteCustomChart(id) {
   custom = custom.filter(c => c.id !== id);
   saveCustomCharts(custom);
 
-  fetch(`/api/journal/custom-charts/${id}`, { method: 'DELETE' }).catch(() => undefined);
+  apiFetch(`/api/journal/custom-charts/${id}`, { method: 'DELETE' }).catch(() => undefined);
 
   document.getElementById('detail-modal')?.close();
   toast('Custom chart study deleted', 'info');
@@ -2846,7 +3698,7 @@ function handlePinterestUrlsInput() {
     }
 
     // Call backend API resolver for pin.it or pinterest.com/pin/... links
-    fetch('/api/pinterest-resolve', {
+    apiFetch('/api/pinterest-resolve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
