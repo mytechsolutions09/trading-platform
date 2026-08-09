@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   CandlestickChart,
@@ -11,6 +11,7 @@ import {
   Moon,
   Settings,
   BookOpen,
+  Sparkles,
   PanelLeftOpen,
   PanelLeftClose,
 } from "lucide-react";
@@ -21,6 +22,7 @@ const links = [
   { to: "/charts", label: "Charts", icon: CandlestickChart },
   { to: "/trade", label: "Trade", icon: ArrowLeftRight },
   { to: "/journal", label: "Trading Journal", icon: BookOpen },
+  { to: "/nakshatra", label: "Nakshatra Trading", icon: Sparkles },
   { to: "/portfolio", label: "Portfolio", icon: Briefcase },
   { to: "/markets", label: "Markets", icon: Globe2 },
   { to: "/calendar", label: "Calendar", icon: CalendarDays },
@@ -28,6 +30,7 @@ const links = [
 ];
 
 export function Sidebar() {
+  const location = useLocation();
   const {
     dbStatus,
     dbPath,
@@ -59,17 +62,31 @@ export function Sidebar() {
       </div>
 
       <nav className="nav">
-        {links.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
-          >
-            <Icon size={18} strokeWidth={1.75} />
-            <span>{label}</span>
-          </NavLink>
-        ))}
+        {links.map(({ to, label, icon: Icon, end }) => {
+          const isNakshatra = to === "/nakshatra";
+          const isJournal = to === "/journal";
+          const customActive = isNakshatra
+            ? location.pathname === "/nakshatra"
+            : isJournal
+            ? location.pathname.startsWith("/journal")
+            : undefined;
+
+          return (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              title={label}
+              data-tooltip={label}
+              className={({ isActive: defaultActive }) =>
+                `nav-link ${(customActive !== undefined ? customActive : defaultActive) ? "active" : ""}`
+              }
+            >
+              <Icon size={18} strokeWidth={1.75} />
+              <span>{label}</span>
+            </NavLink>
+          );
+        })}
       </nav>
 
       <div className="sidebar-collapse-toggle">
@@ -78,6 +95,7 @@ export function Sidebar() {
           onClick={toggleLeftSidebar}
           className="collapse-btn"
           title={leftSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          data-tooltip={leftSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
           aria-label={leftSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
         >
           {leftSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
@@ -91,6 +109,7 @@ export function Sidebar() {
           onClick={toggleTheme}
           className="theme-toggle-btn"
           title={theme === "light" ? "Switch to Dark Mode" : "Switch to Light Mode"}
+          data-tooltip={theme === "light" ? "Dark Mode" : "Light Mode"}
           aria-label={theme === "light" ? "Switch to Dark Mode" : "Switch to Light Mode"}
         >
           {theme === "light" ? (

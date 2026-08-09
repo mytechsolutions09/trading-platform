@@ -9,11 +9,13 @@ export interface LiveQuote {
   volume: string;
 }
 
-/** Yahoo Finance via Vite proxy (avoids browser CORS) */
-const YAHOO_BASE = "/api/yahoo";
+const API_BASE = (import.meta.env.VITE_API_URL || "https://apex-trade-api.arpitkanotra.workers.dev").replace(/\/$/, "");
 
-/** Binance via Vite proxy (avoids browser CORS on error responses) */
-const BINANCE_BASE = "/api/binance";
+/** Yahoo Finance via Cloudflare Worker proxy */
+const YAHOO_BASE = `${API_BASE}/api/yahoo`;
+
+/** Binance via Cloudflare Worker proxy */
+const BINANCE_BASE = `${API_BASE}/api/binance`;
 
 function formatVolume(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "—";

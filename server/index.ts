@@ -34,6 +34,9 @@ import {
   saveJournalSheet,
   deleteJournalSheet,
   batchSaveJournalSheets,
+  getNakshatraEntries,
+  saveNakshatraEntry,
+  batchSaveNakshatraEntries,
 } from "./db.js";
 
 const PORT = Number(process.env.API_PORT) || 8787;
@@ -295,6 +298,27 @@ app.delete("/api/journal/sheets/:id", (req, res) => {
 app.post("/api/journal/sheets/batch", (req, res) => {
   const list = Array.isArray(req.body) ? req.body : [];
   batchSaveJournalSheets(list);
+  res.json({ ok: true });
+});
+
+// ─── Nakshatra Trading Endpoints ───
+app.get("/api/journal/nakshatra", (_req, res) => {
+  res.json(getNakshatraEntries());
+});
+
+app.post("/api/journal/nakshatra", (req, res) => {
+  const { dayId, data } = req.body ?? {};
+  if (!dayId) {
+    res.status(400).json({ ok: false, message: "Missing dayId." });
+    return;
+  }
+  saveNakshatraEntry(dayId, data);
+  res.json({ ok: true });
+});
+
+app.post("/api/journal/nakshatra/batch", (req, res) => {
+  const state = req.body ?? {};
+  batchSaveNakshatraEntries(state);
   res.json({ ok: true });
 });
 

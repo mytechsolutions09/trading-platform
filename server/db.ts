@@ -268,6 +268,17 @@ export function initDb() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS journal_nakshatra (
+      day_id TEXT PRIMARY KEY,
+      instrument TEXT,
+      direction TEXT,
+      entry_price REAL,
+      exit_price REAL,
+      qty REAL,
+      notes TEXT,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_orders_timestamp ON orders(timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_watchlist_sort ON watchlist(sort_order ASC);
     CREATE INDEX IF NOT EXISTS idx_journal_trades_date ON journal_trades(date DESC);
@@ -1090,6 +1101,72 @@ export function batchSavePsychLogs(list: DbPsychLog[]) {
         log.notes || null,
         log.timestamp || Date.now()
       );
+    });
+  });
+}
+
+export function getNakshatraEntries(): Record<string, any> {
+  const rows = db.prepare("SELECT * FROM journal_nakshatra").all() as any[];
+  const state: Record<string, any> = {};
+  rows.forEach((r) => {
+    state[r.day_id] = {
+      instrument: r.instrument || "",
+      direction: r.direction || "",
+      entry: r.entry_price !== null ? r.entry_price : "",
+      exit: r.exit_price !== null ? r.exit_price : "",
+      qty: r.qty !== null ? r.qty : "",
+      notes: r.notes || "",
+    };
+  });
+  return state;
+}
+
+export function saveNakshatraEntry(dayId: string, data: any) {
+  const updatedAt = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO journal_nakshatra (day_id, instrument, direction, entry_price, exit_price, qty, notes, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(day_id) DO UPDATE SET
+      instrument=excluded.instrument,
+      direction=excluded.direction,
+      entry_price=excluded.entry_price,
+      exit_price=excluded.exit_price,
+      qty=excluded.qty,
+      notes=excluded.notes,
+      updated_at=excluded.updated_at
+  `).run(
+    dayId,
+    data.instrument || null,
+    data.direction || null,
+    data.entry !== "" && data.entry !== undefined && data.entry !== null ? Number(data.entry) : null,
+    data.exit !== "" && data.exit !== undefined && data.exit !== null ? Number(data.exit) : null,
+    data.qty !== "" && data.qty !== undefined && data.qty !== null ? Number(data.qty) : null,
+    data.notes || null,
+    updatedAt
+  );
+}
+
+export function batchSaveNakshatraEntries(state: Record<string, any>) {
+  db.prepare("DELETE FROM journal_nakshatra").run();
+  const insert = db.prepare(`
+    INSERT INTO journal_nakshatra (day_id, instrument, direction, entry_price, exit_price, qty, notes, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const updatedAt = new Date().toISOString();
+  runInTransaction(() => {
+    Object.entries(state || {}).forEach(([dayId, data]) => {
+      if (data && typeof data === "object") {
+        insert.run(
+          dayId,
+          data.instrument || null,
+          data.direction || null,
+          data.entry !== "" && data.entry !== undefined && data.entry !== null ? Number(data.entry) : null,
+          data.exit !== "" && data.exit !== undefined && data.exit !== null ? Number(data.exit) : null,
+          data.qty !== "" && data.qty !== undefined && data.qty !== null ? Number(data.qty) : null,
+          data.notes || null,
+          updatedAt
+        );
+      }
     });
   });
 }

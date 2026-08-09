@@ -434,9 +434,18 @@ const PAGES = ['dashboard', 'trades', 'analytics', 'charts', 'psychology', 'jour
 let currentPage = 'dashboard';
 
 function navigate(page) {
+  let sub = undefined;
+  if (page && page.includes('/')) {
+    const parts = page.split('/');
+    page = parts[0];
+    sub = parts[1];
+  }
   if (!PAGES.includes(page)) page = 'dashboard';
+  if (page === 'nakshatra' && sub) {
+    currentNkTab = sub;
+  }
   currentPage = page;
-  history.replaceState(null, '', '#' + page);
+  history.replaceState(null, '', '#' + page + (sub ? '/' + sub : ''));
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.page === page);
   });
@@ -1076,11 +1085,10 @@ async function renderNakshatra(el) {
   const handleEsc = (e) => {
     if (e.key === 'Escape' && document.body.classList.contains('nk-fullscreen')) {
       document.body.classList.remove('nk-fullscreen');
-        if (fsBtn) {
-          fsBtn.title = 'Fullscreen Mode';
-          const svg = fsBtn.querySelector('svg');
-          if (svg) svg.innerHTML = '<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>';
-        }
+      if (fsBtn) {
+        fsBtn.title = 'Fullscreen Mode';
+        const svg = fsBtn.querySelector('svg');
+        if (svg) svg.innerHTML = '<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>';
       }
       try {
         window.parent.postMessage({ type: 'TOGGLE_NAKSHATRA_FULLSCREEN', fullscreen: false }, '*');

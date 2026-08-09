@@ -1,7 +1,15 @@
 import { useTradingViewWidget } from "../../hooks/useTradingViewWidget";
 import { useTrading } from "../../context/TradingContext";
 
-export function EconomicCalendar() {
+interface EconomicCalendarProps {
+  importanceFilter?: string;
+  countryFilter?: string;
+}
+
+export function EconomicCalendar({
+  importanceFilter = "0,1",
+  countryFilter = "us,eu,gb,jp,cn,in",
+}: EconomicCalendarProps) {
   const { theme } = useTrading();
   const ref = useTradingViewWidget(
     "https://s3.tradingview.com/external-embedding/embed-widget-events.js",
@@ -11,14 +19,14 @@ export function EconomicCalendar() {
       width: "100%",
       height: "100%",
       locale: "en",
-      importanceFilter: "0,1",
-      countryFilter: "us,eu,gb,jp,cn",
+      importanceFilter,
+      countryFilter,
     },
-    [theme],
+    [theme, importanceFilter, countryFilter],
   );
 
   return (
-    <div className="tv-widget-fill">
+    <div className="tv-widget-fill" style={{ width: "100%", height: "100%", minHeight: "520px" }}>
       <div
         className="tradingview-widget-container"
         ref={ref}

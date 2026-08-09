@@ -26,11 +26,14 @@ export interface BootstrapResponse {
   positions: Position[];
 }
 
+const API_BASE = (import.meta.env.VITE_API_URL || "https://apex-trade-api.arpitkanotra.workers.dev").replace(/\/$/, "");
+
 async function request<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(path, {
+  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+  const res = await fetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",

@@ -24,6 +24,9 @@ export default function App() {
             <Route path="markets" element={<Markets />} />
             <Route path="calendar" element={<Calendar />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="nakshatra" element={<Journal />} />
+            <Route path="nakshatra/:subTab" element={<Journal />} />
+            <Route path="journal/nakshatra" element={<Navigate to="/nakshatra" replace />} />
             <Route path="journal" element={<Navigate to="/journal/dashboard" replace />} />
             <Route path="journal/:tab" element={<Journal />} />
             <Route path="*" element={<Navigate to="/" replace />} />

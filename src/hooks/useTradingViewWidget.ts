@@ -38,7 +38,10 @@ export function useTradingViewWidget(
     const fileName = scriptSrc.split("/").pop()?.replace(".js", "") || "";
     const endpointName = fileName.replace("embed-widget-", "");
 
-    if (endpointName) {
+    // Events and Timeline widgets require direct script tag injection by TradingView specs
+    const useScriptTag = endpointName === "events" || endpointName === "timeline" || !endpointName;
+
+    if (!useScriptTag && endpointName) {
       const iframe = document.createElement("iframe");
       iframe.title = `TradingView ${endpointName}`;
       iframe.style.width = "100%";

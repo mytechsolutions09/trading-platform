@@ -594,6 +594,180 @@ export default {
         return jsonResponse({ ok: true });
       }
 
+      // ─── Psychology Mindset Logs (D1 SQL) ───
+      if (path === "/api/journal/psych-logs" && method === "GET") {
+        const { results } = await env.DB.prepare("SELECT * FROM journal_psych_logs ORDER BY date DESC").all();
+        return jsonResponse(results);
+      }
+
+      if (path === "/api/journal/psych-logs" && method === "POST") {
+        const log = (await request.json()) as any;
+        if (!log || !log.date) {
+          return jsonResponse({ ok: false, message: "Missing log date." }, 400);
+        }
+        await env.DB.prepare(`
+          INSERT OR REPLACE INTO journal_psych_logs
+          (date, energy, focus, sleep, stress, emotion, mantra, notes, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          log.date, log.energy ?? 5, log.focus ?? 5, log.sleep ?? 5, log.stress ?? 5,
+          log.emotion ?? null, log.mantra ?? null, log.notes ?? null, log.timestamp || Date.now()
+        ).run();
+        return jsonResponse({ ok: true });
+      }
+
+      if (path === "/api/journal/psych-logs/batch" && method === "POST") {
+        const list = (await request.json()) as any[];
+        if (Array.isArray(list)) {
+          const stmt = env.DB.prepare(`
+            INSERT OR REPLACE INTO journal_psych_logs
+            (date, energy, focus, sleep, stress, emotion, mantra, notes, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+          const stmts = list.map((log) =>
+            stmt.bind(
+              log.date, log.energy ?? 5, log.focus ?? 5, log.sleep ?? 5, log.stress ?? 5,
+              log.emotion ?? null, log.mantra ?? null, log.notes ?? null, log.timestamp || Date.now()
+            )
+          );
+          if (stmts.length > 0) await env.DB.batch(stmts);
+        }
+        return jsonResponse({ ok: true });
+      }
+
+      // ─── Journal Sheets (D1 SQL) ───
+      if (path === "/api/journal/sheets" && method === "GET") {
+        const { results } = await env.DB.prepare("SELECT * FROM journal_sheets ORDER BY date DESC, created_at DESC").all();
+        return jsonResponse(results);
+      }
+
+      if (path === "/api/journal/sheets" && method === "POST") {
+        const s = (await request.json()) as any;
+        if (!s || !s.id) {
+          return jsonResponse({ ok: false, message: "Missing sheet data or ID." }, 400);
+        }
+        const createdAt = s.createdAt || new Date().toISOString();
+        await env.DB.prepare(`
+          INSERT OR REPLACE INTO journal_sheets (
+            id, date, trade_no, market, time, account, account_size, risk_pct, result_r, net_pnl,
+            asset, timeframe, direction, setup, entry_reason, entry_price, entry_time, stop_loss, tp1, tp2,
+            position_size, risk_amt, risk_r, exit_price, exit_time, result, r_multiple, pnl_amt, pnl_pct,
+            emotion, emotion_other, chart_img, review_well, review_bad, review_lessons, created_at
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?
+          )
+        `).bind(
+          s.id, s.date, s.tradeNo || null, s.market || null, s.time || null, s.account || null, s.accountSize ? Number(s.accountSize) : null, s.riskPct ? Number(s.riskPct) : null, s.resultR || null, s.netPnl ? Number(s.netPnl) : null,
+          s.asset || null, s.timeframe || null, s.direction || null, s.setup || null, s.entryReason || null, s.entryPrice ? Number(s.entryPrice) : null, s.entryTime || null, s.stopLoss ? Number(s.stopLoss) : null, s.tp1 ? Number(s.tp1) : null, s.tp2 ? Number(s.tp2) : null,
+          s.positionSize ? Number(s.positionSize) : null, s.riskAmt ? Number(s.riskAmt) : null, s.riskR || null, s.exitPrice ? Number(s.exitPrice) : null, s.exitTime || null, s.result || null, s.rMultiple || null, s.pnlAmt ? Number(s.pnlAmt) : null, s.pnlPct || null,
+          s.emotion || null, s.emotionOther || null, s.chartImg || null, s.reviewWell || null, s.reviewBad || null, s.reviewLessons || null, createdAt
+        ).run();
+        return jsonResponse({ ok: true });
+      }
+
+      if (path.startsWith("/api/journal/sheets/") && method === "DELETE") {
+        const id = path.split("/").pop();
+        await env.DB.prepare("DELETE FROM journal_sheets WHERE id = ?").bind(id).run();
+        return jsonResponse({ ok: true });
+      }
+
+      if (path === "/api/journal/sheets/batch" && method === "POST") {
+        const list = (await request.json()) as any[];
+        if (Array.isArray(list)) {
+          const stmt = env.DB.prepare(`
+            INSERT OR REPLACE INTO journal_sheets (
+              id, date, trade_no, market, time, account, account_size, risk_pct, result_r, net_pnl,
+              asset, timeframe, direction, setup, entry_reason, entry_price, entry_time, stop_loss, tp1, tp2,
+              position_size, risk_amt, risk_r, exit_price, exit_time, result, r_multiple, pnl_amt, pnl_pct,
+              emotion, emotion_other, chart_img, review_well, review_bad, review_lessons, created_at
+            ) VALUES (
+              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?, ?
+            )
+          `);
+          const stmts = list.map((s) =>
+            stmt.bind(
+              s.id, s.date, s.tradeNo || null, s.market || null, s.time || null, s.account || null, s.accountSize ? Number(s.accountSize) : null, s.riskPct ? Number(s.riskPct) : null, s.resultR || null, s.netPnl ? Number(s.netPnl) : null,
+              s.asset || null, s.timeframe || null, s.direction || null, s.setup || null, s.entryReason || null, s.entryPrice ? Number(s.entryPrice) : null, s.entryTime || null, s.stopLoss ? Number(s.stopLoss) : null, s.tp1 ? Number(s.tp1) : null, s.tp2 ? Number(s.tp2) : null,
+              s.positionSize ? Number(s.positionSize) : null, s.riskAmt ? Number(s.riskAmt) : null, s.riskR || null, s.exitPrice ? Number(s.exitPrice) : null, s.exitTime || null, s.result || null, s.rMultiple || null, s.pnlAmt ? Number(s.pnlAmt) : null, s.pnlPct || null,
+              s.emotion || null, s.emotionOther || null, s.chartImg || null, s.reviewWell || null, s.reviewBad || null, s.reviewLessons || null, s.createdAt || new Date().toISOString()
+            )
+          );
+        }
+        return jsonResponse({ ok: true });
+      }
+
+      // ─── Nakshatra Journal (D1 SQL) ───
+      if (path === "/api/journal/nakshatra" && method === "GET") {
+        const { results } = await env.DB.prepare("SELECT * FROM journal_nakshatra").all();
+        const stateObj: Record<string, any> = {};
+        for (const row of (results || []) as any[]) {
+          stateObj[row.day_id] = {
+            instrument: row.instrument || "",
+            direction: row.direction || "",
+            entry: row.entry_price !== null ? row.entry_price : "",
+            exit: row.exit_price !== null ? row.exit_price : "",
+            qty: row.qty !== null ? row.qty : "",
+            notes: row.notes || "",
+          };
+        }
+        return jsonResponse(stateObj);
+      }
+
+      if (path === "/api/journal/nakshatra" && method === "POST") {
+        const { dayId, data } = (await request.json()) as any;
+        if (!dayId) {
+          return jsonResponse({ ok: false, message: "Missing dayId." }, 400);
+        }
+        const updatedAt = new Date().toISOString();
+        await env.DB.prepare(`
+          INSERT OR REPLACE INTO journal_nakshatra
+          (day_id, instrument, direction, entry_price, exit_price, qty, notes, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          dayId,
+          data?.instrument || null,
+          data?.direction || null,
+          data?.entry !== "" && data?.entry !== undefined && data?.entry !== null ? Number(data.entry) : null,
+          data?.exit !== "" && data?.exit !== undefined && data?.exit !== null ? Number(data.exit) : null,
+          data?.qty !== "" && data?.qty !== undefined && data?.qty !== null ? Number(data.qty) : null,
+          data?.notes || null,
+          updatedAt
+        ).run();
+        return jsonResponse({ ok: true });
+      }
+
+      if (path === "/api/journal/nakshatra/batch" && method === "POST") {
+        const state = (await request.json()) as Record<string, any>;
+        if (state && typeof state === "object") {
+          const stmt = env.DB.prepare(`
+            INSERT OR REPLACE INTO journal_nakshatra
+            (day_id, instrument, direction, entry_price, exit_price, qty, notes, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+          const updatedAt = new Date().toISOString();
+          const stmts = Object.entries(state).map(([dayId, data]) =>
+            stmt.bind(
+              dayId,
+              data?.instrument || null,
+              data?.direction || null,
+              data?.entry !== "" && data?.entry !== undefined && data?.entry !== null ? Number(data.entry) : null,
+              data?.exit !== "" && data?.exit !== undefined && data?.exit !== null ? Number(data.exit) : null,
+              data?.qty !== "" && data?.qty !== undefined && data?.qty !== null ? Number(data.qty) : null,
+              data?.notes || null,
+              updatedAt
+            )
+          );
+          if (stmts.length > 0) await env.DB.batch(stmts);
+        }
+        return jsonResponse({ ok: true });
+      }
+
       // ─── Pinterest Link Resolver ───
       if (path === "/api/pinterest-resolve" && method === "POST") {
         const { url: pinUrl } = (await request.json()) as { url?: string };
